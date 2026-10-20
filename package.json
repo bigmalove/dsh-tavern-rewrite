@@ -1,0 +1,23 @@
+{
+  "name": "dsh-tavern-rewrite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH Tavern 改写台润色插件：正文写完后调用 revnovel API 润色，再替换成润色后的正文。",
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./client.js"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:unit": "node --test tests/polish.test.mjs",
+    "test:plugin": "node --test tests/plugin.test.mjs",
+    "install:tavern": "node scripts/install.mjs"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": ["dsh-tavern-plugin"]
+    }
+  }
+}
