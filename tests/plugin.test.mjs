@@ -4,6 +4,9 @@ import { createPlugin } from '../index.mjs'
 import { createRewriteClient, normalizeBaseURL } from '../lib/api.mjs'
 import { collectProtected } from '../lib/segments.mjs'
 
+delete process.env.DSH_TAVERN_REWRITE_API_KEY
+delete process.env.REWRITE_API_KEY
+
 const NARRATION = `雨是在黄昏时分落下来的。林岚站在旧书店的门口，看着街对面那盏忽明忽暗的路灯，心里忽然生出一种说不清的预感。她把手里的伞收起来，抖了抖水，推门进去。
 
 店里没有客人，只有柜台后面那个老人，正低头擦一只瓷杯。听见门上的铜铃响，他抬起头，眯着眼睛看了她一会儿，才慢慢开口：“你来了。”
@@ -64,7 +67,7 @@ async function harness(options = {}) {
   const attachments = []
   const data = { plugin: null, saved: [] }
   let current = options.turn || makeTurn()
-  let credential = options.credential || ''
+  let credential = options.credential !== undefined ? options.credential : 'sk-test'
   let gameSettings = options.gameSettings || { auto: true }
   const edits = []
   const calls = []
@@ -128,7 +131,7 @@ async function harness(options = {}) {
 
   const plugin = createPlugin({
     fetchImpl,
-    readConfig: async () => options.config || { apiKey: 'sk-test', baseURL: 'https://example.test', model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 }
+    readConfig: async () => options.config || { baseURL: 'https://example.test', model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 }
   })
   await plugin.apply(ctx)
 
@@ -201,7 +204,7 @@ test('插件：设置、密钥和连接测试', async () => {
   const h = await harness()
   const initial = await h.handlers.get('dsh-tavern-rewrite/state')({})
   assert.equal(initial.key.configured, true)
-  assert.equal(initial.key.source, 'config')
+  assert.equal(initial.key.source, 'credentials')
   assert.equal(initial.settings.baseURL, 'https://example.test')
 
   const saved = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { temperature: 0.1, baseURL: 'https://example.test/v1', maxChars: '700' } })
@@ -215,12 +218,20 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(keySaved.key.source, 'credentials')
   assert.equal(h.credential, 'sk-new')
 
-  const cleared = await h.handlers.get('dsh-tavern-rewrite/key')({ apiKey: '' })
-  assert.equal(cleared.key.configured, true)
-  assert.equal(cleared.key.source, 'config')
-
   const tested = await h.handlers.get('dsh-tavern-rewrite/test')({})
   assert.deepEqual(tested.models, ['rewrite-v9-c600-nvfp4'])
+
+  const cleared = await h.handlers.get('dsh-tavern-rewrite/key')({ apiKey: '' })
+  assert.equal(cleared.key.configured, false)
+  assert.equal(cleared.key.source, '')
+  assert.equal(h.credential, '')
+})
+
+test('插件：密钥不从 config.json 读取，必须用面板/凭据/环境变量配置', async () => {
+  const h = await harness({ credential: '', config: { apiKey: 'sk-from-config', baseURL: 'https://example.test' } })
+  const state = await h.handlers.get('dsh-tavern-rewrite/state')({})
+  assert.equal(state.key.configured, false)
+  assert.equal(state.key.source, '')
 })
 
 test('API：地址归一化', () => {

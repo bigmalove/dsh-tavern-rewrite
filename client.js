@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
       },
       error: { color: '#e5534b', fontSize: '12px', whiteSpace: 'pre-wrap' },
       notice: { color: '#3fb950', fontSize: '12px', whiteSpace: 'pre-wrap' },
+      warn: { color: '#d9a100', fontSize: '12px', padding: '6px 8px', borderRadius: '6px', background: 'rgba(217,161,0,.12)', whiteSpace: 'pre-wrap' },
       sectionTitle: { fontWeight: 600, marginTop: '4px' },
       log: { display: 'grid', gap: '4px', maxHeight: '240px', overflow: 'auto' },
       logRow: {
@@ -131,7 +132,7 @@ window.__ModuleLoader__.load({
           const next = await ctx.tavernUi.callHost(PLUGIN + '/key', { apiKey: clear ? '' : apiKey })
           setState(current => current ? { ...current, key: next.key } : current)
           if (!clear) setApiKey('')
-          setNotice(clear ? '已清除凭据里的密钥（config.json 里的仍会生效）' : '密钥已保存')
+          setNotice(clear ? '已清除凭据里的密钥' : '密钥已保存')
         } catch (reason) {
           setError(String(reason?.message || reason))
         } finally {
@@ -196,6 +197,7 @@ window.__ModuleLoader__.load({
         ),
         error ? h('div', { style: styles.error }, error) : null,
         notice ? h('div', { style: styles.notice }, notice) : null,
+        !key.configured ? h('div', { style: styles.warn }, '还没有配置改写台 API 密钥：把 sk-rw-… 粘贴到下面的「API 密钥」，点「保存密钥」。保存后新正文才会自动润色。') : null,
         h('div', { style: styles.row },
           h('div', { style: { flex: '1 1 260px' } }, field('服务地址', h('input', {
             style: styles.input, value: form.baseURL,
@@ -239,7 +241,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy), onClick: () => saveKey(false) }, busy === 'key' ? '保存中…' : '保存密钥'),
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy) || !key.configured, onClick: () => saveKey(true) }, busy === 'clear' ? '清除中…' : '清除凭据里的密钥')
           ),
-          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里，不写进插件数据。也可以把 apiKey 写进插件目录的 config.json。')
+          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里，不写进插件数据，也不写进 config.json。也可以在目标环境用 DSH_TAVERN_REWRITE_API_KEY 环境变量。')
         ),
         h('div', { style: styles.sectionTitle }, '最近的润色'),
         recent.length

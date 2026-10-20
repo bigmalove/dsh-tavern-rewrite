@@ -1,5 +1,4 @@
 {
-  "apiKey": "sk-rw-在这里填你的改写台 API 密钥",
   "baseURL": "https://rewrite.revnovel.org",
   "model": "rewrite-v9-c600-nvfp4",
   "temperature": 0.15,

@@ -33,14 +33,14 @@ npm run install:tavern
 DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 ```
 
-脚本只更新代码和说明，**不会覆盖目标目录已有的 `config.json`**。如果目标目录还没有配置，可以：
+脚本只更新代码和说明，**不会覆盖目标目录已有的 `config.json`**。
 
-- 在 Tavern 的「润色」面板里填 API 密钥（存进 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY`）和设置；或
-- 在插件目录里建 `config.json`（参考 `config.example.json`，不要提交到公开仓库）：
+装好后刷新 Tavern 页面，打开侧栏「润色」，把 API 密钥粘贴到「API 密钥」里点「保存密钥」。密钥保存在 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY` 中，**不写进插件数据，也不写进 `config.json`**。
+
+`config.json` 是可选的非密钥配置（参考 `config.example.json`），只放服务地址、模型、温度这些：
 
 ```json
 {
-  "apiKey": "sk-rw-…",
   "baseURL": "https://rewrite.revnovel.org",
   "model": "rewrite-v9-c600-nvfp4",
   "temperature": 0.15,
@@ -48,6 +48,8 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
   "concurrency": 2
 }
 ```
+
+无界面的环境可以用环境变量 `DSH_TAVERN_REWRITE_API_KEY`（或 `REWRITE_API_KEY`），但正常使用请在插件面板里配置。
 
 宿主侧（`index.mjs` / `lib/`）改动后要重启 DSH/Tavern 才生效；浏览器侧（`client.js`）刷新页面即可。
 
@@ -57,7 +59,6 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `apiKey` | — | 改写台密钥，`sk-rw-…`。优先读 DSH 凭据，其次环境变量 `DSH_TAVERN_REWRITE_API_KEY` / `REWRITE_API_KEY`，最后读 `config.json` |
 | `baseURL` | `https://rewrite.revnovel.org` | 服务地址，不带 `/v1`；直接贴 `/api` 文档页也可以 |
 | `model` | `rewrite-v9-c600-nvfp4` | 服务当前只提供这一个模型 |
 | `temperature` | `0.15` | 越低越保守。0.4 以上容易改写过度或复读，不建议 |
@@ -66,6 +67,8 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 | `concurrency` | `2` | 同时发几段；1–4 |
 | `timeoutMs` | `90000` | 单次请求超时 |
 | `retries` | `2` | 429/5xx/网络错误的自动重试次数 |
+
+密钥不在这张表里：它只在「润色」面板里配置，存进 DSH 凭据。
 
 ## 改写台 API 备忘
 

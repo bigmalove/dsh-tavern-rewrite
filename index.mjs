@@ -134,17 +134,17 @@ export function createPlugin(options = {}) {
         try {
           const hit = await credentials.resolve(KEY_REF)
           if (hit?.value) return { value: String(hit.value).trim(), source: 'credentials' }
-        } catch { /* 没有凭据服务时继续看环境变量和 config.json */ }
+        } catch { /* 没有凭据服务时继续看环境变量 */ }
       }
+      // 密钥只从 DSH 凭据或环境变量读取，不从 config.json 读，避免明文落地。
       const env = process.env.DSH_TAVERN_REWRITE_API_KEY || process.env.REWRITE_API_KEY
       if (env && env.trim()) return { value: env.trim(), source: 'env' }
-      if (typeof configFile.apiKey === 'string' && configFile.apiKey.trim()) return { value: configFile.apiKey.trim(), source: 'config' }
       return { value: '', source: '' }
     }
 
     async function getClient() {
       const resolved = await resolveKey()
-      if (!resolved.value) throw new RewriteError('还没有配置改写 API 密钥；在「润色」面板里填一个，或写进插件目录的 config.json', { code: 'no-key' })
+      if (!resolved.value) throw new RewriteError('还没有配置改写 API 密钥；请在 Tavern 的「润色」面板里填写并保存', { code: 'no-key' })
       const identity = [resolved.value, settings.baseURL, settings.model, settings.timeoutMs, settings.retries].join('\u0000')
       if (cachedClient && cachedIdentity === identity) return cachedClient
       cachedClient = createRewriteClient({
@@ -472,7 +472,7 @@ export function createPlugin(options = {}) {
 
       tavern.handle(HANDLE.key, async ({ apiKey } = {}) => {
         if (!credentials || typeof credentials.set !== 'function') {
-          throw new Error('当前环境没有凭据服务；请把 apiKey 写进插件目录的 config.json')
+          throw new Error('当前环境没有可用的 DSH 凭据服务，无法在面板里保存密钥')
         }
         if (apiKey === null || apiKey === undefined || apiKey === '') {
           if (typeof credentials.unset === 'function') await credentials.unset(KEY_REF)
