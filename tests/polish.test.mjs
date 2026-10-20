@@ -62,6 +62,12 @@ const STRUCTURE_SAMPLES = [
   '正文。\n\n<InitVar>{"gold":1}</InitVar>\n\n后文。'
 ]
 
+test('设置：自动润色总开关默认开，显式 false 才关', () => {
+  assert.equal(normalizeSettings({}).auto, true)
+  assert.equal(normalizeSettings({ auto: false }).auto, false)
+  assert.equal(normalizeSettings({ auto: 'false' }).auto, false)
+})
+
 test('正文分段：改写文字后 HTML 结构保持原样', () => {
   for (const sample of STRUCTURE_SAMPLES) {
     const result = mapProseSegments(sample, text => text.replace(/[。！？]/g, '！'))

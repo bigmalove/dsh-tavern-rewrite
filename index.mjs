@@ -10,7 +10,7 @@ export const inject = ['tavern', 'credentials']
 const KEY_REF = 'DSH_TAVERN_REWRITE_API_KEY'
 const STATUS_KIND = name + '/status'
 const CONFIG_URL = new URL('./config.json', import.meta.url)
-const FIELDS = ['baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'concurrency', 'timeoutMs', 'retries']
+const FIELDS = ['auto', 'baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'concurrency', 'timeoutMs', 'retries']
 const HANDLE = {
   state: name + '/state',
   save: name + '/save',
@@ -134,17 +134,15 @@ export function createPlugin(options = {}) {
         try {
           const hit = await credentials.resolve(KEY_REF)
           if (hit?.value) return { value: String(hit.value).trim(), source: 'credentials' }
-        } catch { /* 没有凭据服务时继续看环境变量 */ }
+        } catch { /* 没有凭据服务时按未配置处理 */ }
       }
-      // 密钥只从 DSH 凭据或环境变量读取，不从 config.json 读，避免明文落地。
-      const env = process.env.DSH_TAVERN_REWRITE_API_KEY || process.env.REWRITE_API_KEY
-      if (env && env.trim()) return { value: env.trim(), source: 'env' }
+      // 密钥只来自 DSH 凭据（由插件面板写入），不读 config.json。
       return { value: '', source: '' }
     }
 
     async function getClient() {
       const resolved = await resolveKey()
-      if (!resolved.value) throw new RewriteError('还没有配置改写 API 密钥；请在 Tavern 的「润色」面板里填写并保存', { code: 'no-key' })
+      if (!resolved.value) throw new RewriteError('还没有配置 API 密钥；请在 revnovel润色面板里填写并保存', { code: 'no-key' })
       const identity = [resolved.value, settings.baseURL, settings.model, settings.timeoutMs, settings.retries].join('\u0000')
       if (cachedClient && cachedIdentity === identity) return cachedClient
       cachedClient = createRewriteClient({
@@ -204,6 +202,7 @@ export function createPlugin(options = {}) {
     }
 
     async function autoEnabled(gameId) {
+      if (settings.auto === false) return false
       try {
         const values = await tavern.getGameSettings({ gameId })
         return values?.auto !== false
@@ -395,12 +394,12 @@ export function createPlugin(options = {}) {
 
     if (typeof tavern.gameSettings === 'function') {
       tavern.gameSettings({
-        title: '正文润色',
+        title: 'revnovel润色',
         fields: [{
           key: 'auto',
           type: 'boolean',
-          label: '每轮自动润色',
-          description: '正文写完后调用改写台润色一次，再替换成润色后的正文；正文不足 400 字时跳过。',
+          label: '本局自动润色',
+          description: '本局是否自动润色；面板里还有总开关。',
           default: true
         }]
       })
@@ -409,7 +408,7 @@ export function createPlugin(options = {}) {
     if (typeof tavern.settlementTask === 'function') {
       tavern.settlementTask({
         name: 'rewrite',
-        title: '正文润色',
+        title: 'revnovel润色',
         phase: 'parallel',
         async run({ gameId, turn, textVersion, rawText, text, signal }) {
           try {

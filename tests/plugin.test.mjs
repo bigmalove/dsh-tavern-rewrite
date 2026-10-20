@@ -4,9 +4,6 @@ import { createPlugin } from '../index.mjs'
 import { createRewriteClient, normalizeBaseURL } from '../lib/api.mjs'
 import { collectProtected } from '../lib/segments.mjs'
 
-delete process.env.DSH_TAVERN_REWRITE_API_KEY
-delete process.env.REWRITE_API_KEY
-
 const NARRATION = `雨是在黄昏时分落下来的。林岚站在旧书店的门口，看着街对面那盏忽明忽暗的路灯，心里忽然生出一种说不清的预感。她把手里的伞收起来，抖了抖水，推门进去。
 
 店里没有客人，只有柜台后面那个老人，正低头擦一只瓷杯。听见门上的铜铃响，他抬起头，眯着眼睛看了她一会儿，才慢慢开口：“你来了。”
@@ -147,7 +144,7 @@ async function harness(options = {}) {
 test('插件：后台结算并行预润色，结算后替换正文且不重复替换', async () => {
   const h = await harness()
   assert.equal(h.tasks.length, 1)
-  assert.equal(h.tasks[0].title, '正文润色')
+  assert.equal(h.tasks[0].title, 'revnovel润色')
   assert.equal(h.tasks[0].phase, 'parallel')
   const turn = h.current
   await h.tasks[0].run({ ...turn, signal: new AbortController().signal })
@@ -191,6 +188,18 @@ test('插件：玩家手动编辑后不自动覆盖，重新生成后恢复', as
   assert.equal(h.edits.length, 1)
 })
 
+test('插件：面板总开关关闭后不自动润色，手动仍可用', async () => {
+  const h = await harness()
+  const saved = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { auto: false } })
+  assert.equal(saved.settings.auto, false)
+  await h.tasks[0].run({ ...h.current, signal: new AbortController().signal })
+  await h.settled[0](h.current)
+  assert.equal(h.edits.length, 0, '总开关关闭后不自动替换')
+  const manual = await h.handlers.get('dsh-tavern-rewrite/polish')({ gameId: 'game-1', turn: 2 })
+  assert.equal(manual.ok, true)
+  assert.equal(h.edits.length, 1, '手动按钮不受总开关影响')
+})
+
 test('插件：手动润色当前这一轮', async () => {
   const h = await harness()
   const result = await h.handlers.get('dsh-tavern-rewrite/polish')({ gameId: 'game-1', turn: 2 })
@@ -206,8 +215,10 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(initial.key.configured, true)
   assert.equal(initial.key.source, 'credentials')
   assert.equal(initial.settings.baseURL, 'https://example.test')
+  assert.equal(initial.settings.auto, true)
 
-  const saved = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { temperature: 0.1, baseURL: 'https://example.test/v1', maxChars: '700' } })
+  const saved = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { auto: false, temperature: 0.1, baseURL: 'https://example.test/v1', maxChars: '700' } })
+  assert.equal(saved.settings.auto, false)
   assert.equal(saved.settings.temperature, 0.1)
   assert.equal(saved.settings.baseURL, 'https://example.test')
   assert.equal(saved.settings.maxChars, 700)
@@ -227,7 +238,7 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(h.credential, '')
 })
 
-test('插件：密钥不从 config.json 读取，必须用面板/凭据/环境变量配置', async () => {
+test('插件：密钥不从 config.json 读取，必须用面板/凭据配置', async () => {
   const h = await harness({ credential: '', config: { apiKey: 'sk-from-config', baseURL: 'https://example.test' } })
   const state = await h.handlers.get('dsh-tavern-rewrite/state')({})
   assert.equal(state.key.configured, false)

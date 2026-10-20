@@ -1,4 +1,5 @@
 {
+  "auto": true,
   "baseURL": "https://rewrite.revnovel.org",
   "model": "rewrite-v9-c600-nvfp4",
   "temperature": 0.15,

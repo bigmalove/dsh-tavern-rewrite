@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DSH Tavern 改写台润色插件：正文写完后调用 revnovel API 润色，再替换成润色后的正文。",
+  "description": "revnovel润色：DSH Tavern 正文润色插件，正文写完后调用 revnovel API 润色，再替换成润色后的正文。",
   "exports": {
     ".": "./index.mjs",
     "./client": "./client.js"
@@ -17,7 +17,9 @@
   "dsh": {
     "client": {
       "platform": "web",
-      "inject": ["dsh-tavern-plugin"]
+      "inject": [
+        "dsh-tavern-plugin"
+      ]
     }
   }
 }

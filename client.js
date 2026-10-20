@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const PLUGIN = 'dsh-tavern-rewrite'
+    const DISCORD = 'https://discord.com/channels/1134557553011998840/1553427579346616480'
 
     const STATUS_LABEL = {
       prepared: '已准备',
@@ -13,9 +14,7 @@ window.__ModuleLoader__.load({
       cancelled: '取消'
     }
     const SOURCE_LABEL = {
-      credentials: '凭据',
-      env: '环境变量',
-      config: 'config.json'
+      credentials: '凭据'
     }
     const REASON_LABEL = {
       'off-topic': '偏离原文',
@@ -56,6 +55,8 @@ window.__ModuleLoader__.load({
         display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '8px', alignItems: 'baseline',
         padding: '4px 6px', borderRadius: '4px', background: 'rgba(127,127,127,.06)', fontSize: '12px'
       },
+      check: { display: 'flex', gap: '7px', alignItems: 'center', cursor: 'pointer' },
+      link: { color: '#58a6ff', textDecoration: 'none' },
       badge: {
         display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 8px',
         borderRadius: '999px', background: 'rgba(127,127,127,.12)', fontSize: '12px',
@@ -82,6 +83,7 @@ window.__ModuleLoader__.load({
         if (!next) return
         setState(next)
         setForm({
+          auto: next.settings.auto !== false,
           baseURL: next.settings.baseURL,
           model: next.settings.model,
           temperature: String(next.settings.temperature),
@@ -140,6 +142,23 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function setAuto(checked) {
+        update('auto', checked)
+        setBusy('auto')
+        setError('')
+        setNotice('')
+        try {
+          const next = await ctx.tavernUi.callHost(PLUGIN + '/save', { settings: { auto: checked } })
+          setState(current => current ? { ...current, settings: next.settings } : current)
+          setNotice(checked ? '已开启自动润色' : '已关闭自动润色')
+        } catch (reason) {
+          update('auto', !checked)
+          setError(String(reason?.message || reason))
+        } finally {
+          setBusy('')
+        }
+      }
+
       async function test() {
         setBusy('test')
         setError('')
@@ -185,19 +204,22 @@ window.__ModuleLoader__.load({
 
       return h('div', { style: styles.panel },
         h('div', null,
-          h('div', { style: styles.sectionTitle }, '改写台润色'),
-          h('div', { style: styles.hint }, '正文写完后调用改写台 API 润色一次，再替换成润色后的正文。HTML 状态栏、代码块、插件标记会原样保留；正文不足 400 字时改写台不接受，会自动跳过。')
+          h('div', { style: styles.sectionTitle }, 'revnovel润色'),
+          h('div', { style: styles.hint }, '正文写完后自动调用 revnovel 改写一次，再替换成润色后的正文。HTML 状态栏、代码块、插件标记会原样保留；正文不足 400 字时自动跳过。')
         ),
         h('div', { style: styles.row },
           h('span', { style: styles.badge },
             h('span', { style: { ...styles.dot, background: key.configured ? '#3fb950' : '#e5534b' } }),
             key.configured ? '密钥已配置（' + (SOURCE_LABEL[key.source] || key.source) + '）' : '密钥未配置'
           ),
-          h('span', { style: styles.hint }, '每局可以在「本局设置 → 正文润色」里关掉自动润色。')
+          h('label', { style: styles.check, title: '总开关；每局还能在本局设置里单独关闭' },
+            h('input', { type: 'checkbox', checked: form.auto !== false, disabled: Boolean(busy), onChange: event => setAuto(event.target.checked) }),
+            '自动润色'
+          )
         ),
         error ? h('div', { style: styles.error }, error) : null,
         notice ? h('div', { style: styles.notice }, notice) : null,
-        !key.configured ? h('div', { style: styles.warn }, '还没有配置改写台 API 密钥：把 sk-rw-… 粘贴到下面的「API 密钥」，点「保存密钥」。保存后新正文才会自动润色。') : null,
+        !key.configured ? h('div', { style: styles.warn }, '还没有配置 API 密钥：把 sk-rw-… 粘贴到下面并保存。') : null,
         h('div', { style: styles.row },
           h('div', { style: { flex: '1 1 260px' } }, field('服务地址', h('input', {
             style: styles.input, value: form.baseURL,
@@ -241,7 +263,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy), onClick: () => saveKey(false) }, busy === 'key' ? '保存中…' : '保存密钥'),
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy) || !key.configured, onClick: () => saveKey(true) }, busy === 'clear' ? '清除中…' : '清除凭据里的密钥')
           ),
-          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里，不写进插件数据，也不写进 config.json。也可以在目标环境用 DSH_TAVERN_REWRITE_API_KEY 环境变量。')
+          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里。')
         ),
         h('div', { style: styles.sectionTitle }, '最近的润色'),
         recent.length
@@ -255,7 +277,8 @@ window.__ModuleLoader__.load({
             ),
             h('span', { style: styles.hint }, entry.ms ? Math.round(entry.ms / 100) / 10 + 's' : '')
           )))
-          : h('div', { style: styles.hint }, '还没有记录')
+          : h('div', { style: styles.hint }, '还没有记录'),
+        h('div', { style: styles.hint }, '作者 Discord：', h('a', { href: DISCORD, target: '_blank', rel: 'noreferrer noopener', style: styles.link }, '加入频道'))
       )
     }
 
@@ -279,7 +302,7 @@ window.__ModuleLoader__.load({
         if (typeof ctx.tavernUi.registerComposerAction === 'function') {
           ctx.tavernUi.registerComposerAction({
             id: 'polish',
-            label: '润色',
+            label: 'revnovel润色',
             when: ({ busy, turn }) => !busy && Number.isInteger(turn) && turn > 0,
             run: async ({ gameId, turn }) => {
               await ctx.tavernUi.callHost(PLUGIN + '/polish', { gameId, turn })
@@ -289,7 +312,7 @@ window.__ModuleLoader__.load({
         if (typeof ctx.tavernUi.registerPanel === 'function') {
           ctx.tavernUi.registerPanel({
             id: 'rewrite',
-            title: '润色',
+            title: 'revnovel润色',
             render: ({ gameId }) => h(Panel, { ctx, gameId })
           })
         }

@@ -1,8 +1,8 @@
-# dsh-tavern-rewrite（改写台润色）
+# revnovel润色（dsh-tavern-rewrite）
 
-每轮正文写完后，把正文发给 [改写台](https://rewrite.revnovel.org) 的 OpenAI 兼容 API 润色一次，再用 `editTurn` 把显示和存档里的正文替换成润色后的版本。
+revnovel润色：每轮正文写完后，把正文发给 [revnovel 改写台](https://rewrite.revnovel.org) 的 OpenAI 兼容 API 润色一次，再用 `editTurn` 把显示和存档里的正文替换成润色后的版本。
 
-这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。
+这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。内部包名和安装目录仍用 `dsh-tavern-rewrite`，界面显示为「revnovel润色」。
 
 ## 它怎么工作
 
@@ -11,7 +11,7 @@
 3. 改写台要求输入至少 400 字。插件按 1000 字左右切段（可在面板里调），每段单独调用；不足 400 字的段落跳过，正文整体太短时这一轮就不润色。
 4. 模型输出会做校验：长度比例、和原文的二字组重合度、复读、是否被截断、是否有占位符丢失。不合格会降温度重试一次，仍不合格就跳过这一段。跳过的段落保留原文，其余段落照常替换。
 5. `editTurn` 会再触发一次 `onTurnSettled`。插件用 `textVersion`、润色文本哈希和 `onTimelineChanged` 的 `edit/regenerate` 事件做防循环，不会反复润色。玩家手动编辑过的正文也不会被自动覆盖。
-6. 每局可以在「本局设置 → 正文润色」里关掉自动润色；输入框上方的「润色」按钮可以手动重跑当前这一轮。
+6. 面板里有「自动润色」总开关；每局也可以在「本局设置 → revnovel润色」里单独关闭。输入框上方的「revnovel润色」按钮可以手动重跑当前这一轮。
 
 ## 安装
 
@@ -35,7 +35,7 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 
 脚本只更新代码和说明，**不会覆盖目标目录已有的 `config.json`**。
 
-装好后刷新 Tavern 页面，打开侧栏「润色」，把 API 密钥粘贴到「API 密钥」里点「保存密钥」。密钥保存在 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY` 中，**不写进插件数据，也不写进 `config.json`**。
+装好后刷新 Tavern 页面，打开侧栏「revnovel润色」，把 API 密钥粘贴到「API 密钥」里点「保存密钥」。密钥保存在 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY` 中。
 
 `config.json` 是可选的非密钥配置（参考 `config.example.json`），只放服务地址、模型、温度这些：
 
@@ -49,8 +49,6 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 }
 ```
 
-无界面的环境可以用环境变量 `DSH_TAVERN_REWRITE_API_KEY`（或 `REWRITE_API_KEY`），但正常使用请在插件面板里配置。
-
 宿主侧（`index.mjs` / `lib/`）改动后要重启 DSH/Tavern 才生效；浏览器侧（`client.js`）刷新页面即可。
 
 也可以手动把 `package.json`、`index.mjs`、`client.js`、`lib/`、`README.md`、`config.example.json` 复制过去，效果一样。
@@ -59,6 +57,7 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
+| `auto` | `true` | 自动润色总开关；面板里也有勾选框 |
 | `baseURL` | `https://rewrite.revnovel.org` | 服务地址，不带 `/v1`；直接贴 `/api` 文档页也可以 |
 | `model` | `rewrite-v9-c600-nvfp4` | 服务当前只提供这一个模型 |
 | `temperature` | `0.15` | 越低越保守。0.4 以上容易改写过度或复读，不建议 |
@@ -68,7 +67,7 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 | `timeoutMs` | `90000` | 单次请求超时 |
 | `retries` | `2` | 429/5xx/网络错误的自动重试次数 |
 
-密钥不在这张表里：它只在「润色」面板里配置，存进 DSH 凭据。
+密钥不在这张表里：它只在「revnovel润色」面板里配置，存进 DSH 凭据。
 
 ## 改写台 API 备忘
 
@@ -80,6 +79,10 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 - 输出常见是一行一句。插件会按原段落重新排版；段内句子顺序由模型保持，跨段边界用句子相似度对齐。
 - Tavern 的插件接口没有「首次显示前替换流式正文」的钩子，公开的替换路径只有结算后的 `editTurn`。所以生成和后台结算期间先看到原文，结算结束后切换成润色版；预润色只是把切换前的额外等待压到最小。
 
+## 作者 / 反馈
+
+改写台作者 Discord：[加入频道](https://discord.com/channels/1134557553011998840/1553427579346616480)
+
 ## 已知限制
 
 - **正文不足 400 字**：改写台直接拒绝，插件会跳过并在面板里记一条「跳过」。
@@ -87,7 +90,7 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 - **插件标记在句子中间**：标记会换成占位符；模型如果弄丢占位符，这一段就跳过。像 `image###…###` 这样单独一行的标记通常能保留。
 - **模型仍可能改写风格**：这是改写模型，不是校对器；它可能调整标点、合并句子、偶尔加一个「……」过渡。觉得太激进就把温度降到 0.1。
 - **只润色最新的、已经结算完的一轮**：`editTurn` 的接口限制；手动按钮也只对最新一轮可用。
-- **开场白不自动润色**：`onTurnSettled` 不为开场白发通知；如果开场白是最新一轮，可以手动点「润色」补一次。
+- **开场白不自动润色**：`onTurnSettled` 不为开场白发通知；如果开场白是最新一轮，可以手动点「revnovel润色」补一次。
 
 ## 测试
 
