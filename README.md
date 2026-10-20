@@ -2,6 +2,8 @@
 
 revnovel润色：每轮正文写完后，把正文发给 [revnovel 改写台](https://rewrite.revnovel.org) 的 OpenAI 兼容 API 润色一次，再用 `editTurn` 把显示和存档里的正文替换成润色后的版本。
 
+GitHub：<https://github.com/bigmalove/dsh-tavern-rewrite>
+
 这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。内部包名和安装目录仍用 `dsh-tavern-rewrite`，界面显示为「revnovel润色」。
 
 ## 它怎么工作
@@ -15,7 +17,15 @@ revnovel润色：每轮正文写完后，把正文发给 [revnovel 改写台](ht
 
 ## 安装
 
-本仓库就是一个 Tavern 插件文件夹。在仓库根目录运行：
+在 DSH Tavern 的「设置 → 插件」里粘贴仓库地址：
+
+```text
+https://github.com/bigmalove/dsh-tavern-rewrite
+```
+
+点安装，刷新页面。
+
+也可以本地安装。本仓库就是一个 Tavern 插件文件夹，在仓库根目录运行：
 
 ```sh
 npm run install:tavern
@@ -104,7 +114,7 @@ npm test
 
 ## 发布
 
-把本仓库作为独立的公开 GitHub 仓库即可；DSH Tavern 的「设置 → 插件」里粘贴仓库地址能一键安装。发布前确认 `config.json` 没有被提交。
+已发布在 <https://github.com/bigmalove/dsh-tavern-rewrite>。更新代码后推送到 `main` 即可；DSH Tavern 的「设置 → 插件」按默认分支安装/更新。发布前确认 `config.json` 没有被提交。
 
 ## 卸载
 
