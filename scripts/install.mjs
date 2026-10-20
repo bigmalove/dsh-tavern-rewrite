@@ -26,5 +26,5 @@ if (!existsSync(targetConfig) && existsSync(sourceConfig)) {
 console.log('已更新 ' + target)
 console.log('宿主侧改动要重启 DSH/Tavern；浏览器侧刷新页面。')
 if (!existsSync(targetConfig)) {
-  console.log('还没有 config.json：可以在 Tavern 的「润色」面板里填密钥，或建一个 ' + targetConfig)
+  console.log('没有 config.json；这不影响使用，密钥请在 Tavern 的「润色」面板里配置。')
 }
