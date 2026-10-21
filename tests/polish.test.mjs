@@ -12,6 +12,7 @@ import {
   splitUnits,
   validateRewrite
 } from '../lib/polish.mjs'
+import { createRewriteClient, isMockEcho } from '../lib/api.mjs'
 import { normalizeSettings } from '../lib/settings.mjs'
 
 const NARRATION = `雨是在黄昏时分落下来的。林岚站在旧书店的门口，看着街对面那盏忽明忽暗的路灯，心里忽然生出一种说不清的预感。她把手里的伞收起来，抖了抖水，推门进去。
@@ -225,4 +226,34 @@ test('整轮润色：模型加 HTML 时放弃', async () => {
   const client = fakeClient(text => text.replace('她把手里的伞收起来', '<div>伞</div>她把手里的伞收起来'))
   const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
   assert.notEqual(result.status, 'ready')
+})
+
+test('mock 模式：只在开头出现的回显提示会被识别', () => {
+  assert.equal(isMockEcho('【mock 模式：模型未接入，以下为原文回显】\n\n正文'), true)
+  assert.equal(isMockEcho('  \n【MOCK 模式：模型未接入】'), true)
+  assert.equal(isMockEcho('正文里提到 mock 模式不算回显'), false)
+  assert.equal(isMockEcho(''), false)
+})
+
+test('mock 模式：改写台回显原文时整轮放弃，不返回可替换的正文', async () => {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push(String(url))
+    const body = JSON.parse(init.body)
+    return new Response(JSON.stringify({
+      id: 'x',
+      object: 'chat.completion',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: '【mock 模式：模型未接入，以下为原文回显】\n\n' + body.messages[0].content },
+        finish_reason: 'stop'
+      }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const client = createRewriteClient({ baseURL: 'https://rewrite.revnovel.org', apiKey: 'sk-test', fetchImpl })
+  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  assert.equal(result.status, 'failed')
+  assert.equal(result.reason, 'upstream-mock')
+  assert.equal(result.text, undefined)
+  assert.equal(calls.length, 1, '命中 mock 后不再继续请求后面的分段')
 })

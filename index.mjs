@@ -66,6 +66,7 @@ function reasonText(reason) {
     'timeout': '改写 API 超时',
     'rate_limit': '改写 API 忙（429）',
     'upstream': '改写 API 暂时不可用',
+    'upstream-mock': '改写台处于 mock 模式（模型未接入），这一轮没有润色',
     'endpoint': '接口地址不对（404）',
     'config': '服务地址或设置不对',
     'TAVERN_PLUGIN_STALE_VERSION': '正文版本已经变了',
@@ -109,6 +110,8 @@ export function createPlugin(options = {}) {
     const lastPolished = new Map()
     const manualEdits = new Map()
     const lifecycle = new AbortController()
+    // 改写台模型没接上时，接下来几分钟里的自动润色直接跳过，不反复请求。
+    let mockUntil = 0
 
     function record(entry) {
       recent.unshift({ at: now(), ...entry, reason: entry.reason ? reasonText(entry.reason) : '' })
@@ -225,8 +228,14 @@ export function createPlugin(options = {}) {
     async function finishIndicator(id, error) {
       if (!id) return
       try {
-        if (error) await tavern.update(id, { status: 'failed', caption: '润色失败', error: shortReason(error) })
-        else await tavern.remove(id)
+        if (error) {
+          const mock = error?.code === 'upstream-mock' || String(error) === 'upstream-mock'
+          await tavern.update(id, {
+            status: 'failed',
+            caption: mock ? '改写台 mock 模式' : '润色失败',
+            error: reasonText(error)
+          })
+        } else await tavern.remove(id)
       } catch { /* 指示器只是锦上添花 */ }
     }
 
@@ -234,10 +243,13 @@ export function createPlugin(options = {}) {
       const resolved = await resolveKey()
       if (!resolved.value) return { status: 'skipped', reason: 'no-key', stats: null }
       if (!rawText || typeof rawText !== 'string') return { status: 'skipped', reason: 'no-raw-text', stats: null }
+      // 刚确认过 mock 模式：自动润色先跳过，手动点按钮始终会再试一次。
+      if (mode !== 'manual' && now() < mockUntil) return { status: 'skipped', reason: 'upstream-mock', stats: null }
       const started = now()
       try {
         const client = await getClient()
         const result = await prepareRawText(rawText, { client, settings, signal: withLifecycle(signal) })
+        if (result.reason === 'upstream-mock') mockUntil = now() + 2 * 60_000
         return { ...result, ms: now() - started, mode }
       } catch (error) {
         if (isAbort(error)) return { status: 'cancelled', reason: 'cancelled', stats: null, ms: now() - started, mode }
@@ -490,7 +502,11 @@ export function createPlugin(options = {}) {
       tavern.handle(HANDLE.test, async () => {
         const client = await getClient()
         const models = await client.listModels()
-        return { models, model: settings.model, baseURL: settings.baseURL }
+        const health = typeof client.health === 'function' ? await client.health() : null
+        if (health?.backend === 'mock') {
+          throw new Error('改写台当前处于 mock 模式（模型未接入），现在润色只会回显原文，等恢复后再试')
+        }
+        return { models, model: settings.model, baseURL: settings.baseURL, backend: health?.backend || '' }
       })
 
       tavern.handle(HANDLE.recent, async () => ({ recent: recent.slice(0, 20) }))

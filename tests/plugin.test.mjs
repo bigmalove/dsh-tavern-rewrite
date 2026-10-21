@@ -30,10 +30,13 @@ function chatCompletion(text) {
   return { id: 'x', object: 'chat.completion', model: 'm', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage: {} }
 }
 
-function fakeFetch({ transform = polish, models = ['rewrite-v9-c600-nvfp4'], calls = [] } = {}) {
+function fakeFetch({ transform = polish, models = ['rewrite-v9-c600-nvfp4'], calls = [], health = null } = {}) {
   return async function fetchImpl(url, init = {}) {
     calls.push({ url: String(url), init })
     const path = new URL(String(url)).pathname
+    if (path.endsWith('/api/health')) {
+      return health ? jsonResponse(health) : new Response('not found', { status: 404 })
+    }
     if (path.endsWith('/v1/models')) return jsonResponse({ object: 'list', data: models.map(id => ({ id })) })
     if (!path.endsWith('/v1/chat/completions')) return new Response('not found', { status: 404 })
     const body = JSON.parse(init.body)
@@ -68,7 +71,7 @@ async function harness(options = {}) {
   let gameSettings = options.gameSettings || { auto: true }
   const edits = []
   const calls = []
-  const fetchImpl = fakeFetch({ transform: options.transform || polish, calls })
+  const fetchImpl = fakeFetch({ transform: options.transform || polish, calls, health: options.health || null })
 
   const credentials = {
     async resolve() { return credential ? { value: credential, source: 'stored' } : undefined },
@@ -209,6 +212,26 @@ test('插件：手动润色当前这一轮', async () => {
   await assert.rejects(h.handlers.get('dsh-tavern-rewrite/polish')({ gameId: 'game-1', turn: 1 }), /最新一轮/)
 })
 
+test('插件：改写台 mock 模式时不替换正文，冷却期内不再自动请求', async () => {
+  const h = await harness({ transform: text => '【mock 模式：模型未接入，以下为原文回显】\n\n' + text })
+  const turn = h.current
+  await h.settled[0](turn)
+  assert.equal(h.edits.length, 0, 'mock 回显不能写进正文')
+  assert.equal(h.attachments.length, 1)
+  assert.equal(h.attachments[0].status, 'failed')
+  assert.match(String(h.attachments[0].caption), /mock/)
+  assert.match(String(h.attachments[0].error), /mock/)
+  const state = await h.handlers.get('dsh-tavern-rewrite/state')({})
+  assert.ok(state.recent.some(entry => entry.reason.includes('mock')))
+
+  const callsAfterFirst = h.calls.length
+  const next = { ...turn, turn: 3, textVersion: 'v9' }
+  h.setCurrent(next)
+  await h.settled[0](next)
+  assert.equal(h.calls.length, callsAfterFirst, '冷却期内不再请求改写台')
+  assert.equal(h.edits.length, 0)
+})
+
 test('插件：设置、密钥和连接测试', async () => {
   const h = await harness()
   const initial = await h.handlers.get('dsh-tavern-rewrite/state')({})
@@ -243,6 +266,16 @@ test('插件：密钥不从 config.json 读取，必须用面板/凭据配置', 
   const state = await h.handlers.get('dsh-tavern-rewrite/state')({})
   assert.equal(state.key.configured, false)
   assert.equal(state.key.source, '')
+})
+
+test('插件：测试连接能识别改写台的 mock 后端', async () => {
+  const mocked = await harness({ health: { ok: true, backend: 'mock', model: 'rewrite-v9-c600-nvfp4' } })
+  await assert.rejects(mocked.handlers.get('dsh-tavern-rewrite/test')({}), /mock/)
+
+  const healthy = await harness({ health: { ok: true, backend: 'vllm' } })
+  const tested = await healthy.handlers.get('dsh-tavern-rewrite/test')({})
+  assert.equal(tested.backend, 'vllm')
+  assert.deepEqual(tested.models, ['rewrite-v9-c600-nvfp4'])
 })
 
 test('API：地址归一化', () => {
