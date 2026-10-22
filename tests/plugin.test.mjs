@@ -30,7 +30,7 @@ function chatCompletion(text) {
   return { id: 'x', object: 'chat.completion', model: 'm', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage: {} }
 }
 
-function fakeFetch({ transform = polish, models = ['rewrite-v9-c600-nvfp4'], calls = [], health = null } = {}) {
+function fakeFetch({ transform = polish, models = ['rewrite-v12-fp8'], calls = [], health = null } = {}) {
   return async function fetchImpl(url, init = {}) {
     calls.push({ url: String(url), init })
     const path = new URL(String(url)).pathname
@@ -40,7 +40,11 @@ function fakeFetch({ transform = polish, models = ['rewrite-v9-c600-nvfp4'], cal
     if (path.endsWith('/v1/models')) return jsonResponse({ object: 'list', data: models.map(id => ({ id })) })
     if (!path.endsWith('/v1/chat/completions')) return new Response('not found', { status: 404 })
     const body = JSON.parse(init.body)
-    return jsonResponse(chatCompletion(transform(body.messages[0].content)))
+    const anchor = body.messages.find(message => message.role === 'assistant')?.content || ''
+    const full = transform(body.messages.find(message => message.role === 'user')?.content || '')
+    // 模拟服务端：有 assistant 预填时只返回锚点后面的续写。
+    const content = anchor && full.startsWith(anchor) ? full.slice(anchor.length) : full
+    return jsonResponse(chatCompletion(content))
   }
 }
 
@@ -131,7 +135,7 @@ async function harness(options = {}) {
 
   const plugin = createPlugin({
     fetchImpl,
-    readConfig: async () => options.config || { baseURL: 'https://example.test', model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 }
+    readConfig: async () => options.config || { baseURL: 'https://example.test', model: 'rewrite-v12-fp8', temperature: 0.6 }
   })
   await plugin.apply(ctx)
 
@@ -253,7 +257,7 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(h.credential, 'sk-new')
 
   const tested = await h.handlers.get('dsh-tavern-rewrite/test')({})
-  assert.deepEqual(tested.models, ['rewrite-v9-c600-nvfp4'])
+  assert.deepEqual(tested.models, ['rewrite-v12-fp8'])
 
   const cleared = await h.handlers.get('dsh-tavern-rewrite/key')({ apiKey: '' })
   assert.equal(cleared.key.configured, false)
@@ -269,13 +273,13 @@ test('插件：密钥不从 config.json 读取，必须用面板/凭据配置', 
 })
 
 test('插件：测试连接能识别改写台的 mock 后端', async () => {
-  const mocked = await harness({ health: { ok: true, backend: 'mock', model: 'rewrite-v9-c600-nvfp4' } })
+  const mocked = await harness({ health: { ok: true, backend: 'mock', model: 'rewrite-v12-fp8' } })
   await assert.rejects(mocked.handlers.get('dsh-tavern-rewrite/test')({}), /mock/)
 
   const healthy = await harness({ health: { ok: true, backend: 'vllm' } })
   const tested = await healthy.handlers.get('dsh-tavern-rewrite/test')({})
   assert.equal(tested.backend, 'vllm')
-  assert.deepEqual(tested.models, ['rewrite-v9-c600-nvfp4'])
+  assert.deepEqual(tested.models, ['rewrite-v12-fp8'])
 })
 
 test('API：地址归一化', () => {
@@ -336,4 +340,73 @@ test('API：429 会重试，5xx 最终失败', async () => {
   })
   await assert.rejects(broken.complete({ text: '原文' }), error => error.code === 'upstream' && error.status === 502)
   assert.equal(failures, 2)
+})
+
+test('API：新版请求体带 task/auto_split，正文放 user，预填放 assistant', async () => {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return jsonResponse(chatCompletion('续写部分'))
+  }
+  const client = createRewriteClient({ baseURL: 'https://rewrite.revnovel.org', apiKey: 'sk-test', model: 'rewrite-v12-fp8', fetchImpl })
+  const result = await client.complete({ text: '第一句。第二句。', prefill: '第一句。\n', temperature: 0.6, maxTokens: 800 })
+  assert.equal(result.text, '第一句。\n续写部分')
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.model, 'rewrite-v12-fp8')
+  assert.equal(body.task, 'rewrite')
+  assert.equal(body.auto_split, false)
+  assert.equal(body.stream, false)
+  assert.equal(body.temperature, 0.6)
+  assert.equal(body.max_tokens, 800)
+  assert.deepEqual(body.messages, [
+    { role: 'user', content: '第一句。第二句。' },
+    { role: 'assistant', content: '第一句。\n' }
+  ])
+  assert.equal(body.messages.some(message => message.role === 'system'), false)
+})
+
+test('API：模型不存在时按 /v1/models 自动切换', async () => {
+  const calls = []
+  const fetchImpl = async (url, init) => {
+    const path = new URL(String(url)).pathname
+    calls.push(path)
+    if (path.endsWith('/v1/models')) {
+      return jsonResponse({ object: 'list', data: [{ id: 'rewrite-v12-fp8' }] })
+    }
+    const body = JSON.parse(init.body)
+    if (body.model === 'rewrite-v9-c600-nvfp4') {
+      return jsonResponse({ error: { message: '模型不存在：rewrite-v9-c600-nvfp4', code: 'model_not_found' } }, 404)
+    }
+    return jsonResponse(chatCompletion('新模型结果'))
+  }
+  const client = createRewriteClient({ baseURL: 'https://example.test', apiKey: 'sk-test', model: 'rewrite-v9-c600-nvfp4', retries: 0, fetchImpl })
+  const result = await client.complete({ text: '原文' })
+  assert.equal(result.text, '新模型结果')
+  assert.equal(result.model, 'rewrite-v12-fp8')
+  assert.equal(calls.filter(path => path.endsWith('/v1/chat/completions')).length, 2)
+  assert.equal(calls.filter(path => path.endsWith('/v1/models')).length, 1)
+})
+
+test('API：模型不存在且拿不到模型列表时保留 model_not_found', async () => {
+  const fetchImpl = async url => {
+    const path = new URL(String(url)).pathname
+    if (path.endsWith('/v1/models')) return jsonResponse({ object: 'list', data: [] })
+    return jsonResponse({ error: { message: '模型不存在', code: 'model_not_found' } }, 404)
+  }
+  const client = createRewriteClient({ baseURL: 'https://example.test', apiKey: 'sk-test', model: 'gone', retries: 0, fetchImpl })
+  await assert.rejects(client.complete({ text: '原文' }), error => error.code === 'model_not_found' && error.status === 404)
+})
+
+test('插件：模型原样返回时换温度重试，直到出现真实改写', async () => {
+  let calls = 0
+  const h = await harness({
+    transform: text => {
+      calls += 1
+      return calls === 1 ? text : text.replace(/瓷杯/g, '茶杯')
+    }
+  })
+  await h.settled[0](h.current)
+  assert.ok(calls >= 2, '第一次原样返回后应重试')
+  assert.equal(h.edits.length, 1)
+  assert.ok(h.edits[0].text.includes('茶杯'))
 })

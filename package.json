@@ -1,6 +1,6 @@
 {
   "name": "dsh-tavern-rewrite",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "revnovel润色：DSH Tavern 正文润色插件，正文写完后调用 revnovel API 润色，再替换成润色后的正文。",

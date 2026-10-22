@@ -18,12 +18,18 @@ window.__ModuleLoader__.load({
     }
     const REASON_LABEL = {
       'off-topic': '偏离原文',
+      'new-content': '掺入新内容',
+      'new-heading': '新增标题',
       'too-long': '过长',
       'too-short-output': '过短',
+      'no-change': '原样返回',
       repetition: '复读',
       truncated: '截断',
       placeholder: '标记丢失',
       input_too_short: '太短',
+      input_too_long: '太长',
+      model_not_found: '模型不存在',
+      empty: '空结果',
       short: '太短',
       structure: '结构校验'
     }
@@ -205,7 +211,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: styles.panel },
         h('div', null,
           h('div', { style: styles.sectionTitle }, 'revnovel润色'),
-          h('div', { style: styles.hint }, '正文写完后自动调用 revnovel 改写一次，再替换成润色后的正文。HTML 状态栏、代码块、插件标记会原样保留；正文不足 400 字时自动跳过。')
+          h('div', { style: styles.hint }, '正文写完后自动调用 revnovel 改写一次，再替换成润色后的正文。HTML 状态栏、代码块、插件标记会原样保留；正文不足 400 字时自动跳过，单段超过 2000 字会先切段。')
         ),
         h('div', { style: styles.row },
           h('span', { style: styles.badge },
@@ -229,11 +235,11 @@ window.__ModuleLoader__.load({
           h('div', { style: { flex: '1 1 220px' } }, field('模型', h('input', {
             style: styles.input, value: form.model,
             onChange: event => update('model', event.target.value),
-            placeholder: 'rewrite-v9-c600-nvfp4'
+            placeholder: 'rewrite-v12-fp8'
           })))
         ),
         h('div', { style: styles.row },
-          h('div', { style: { flex: '1 1 130px' } }, field('温度（越低越保守）', h('input', {
+          h('div', { style: { flex: '1 1 130px' } }, field('温度（0.5–0.8；太低会原样回显）', h('input', {
             style: styles.input, type: 'number', min: 0, max: 1, step: 0.05, value: form.temperature,
             onChange: event => update('temperature', event.target.value)
           }))),

@@ -1,8 +1,8 @@
 {
   "auto": true,
   "baseURL": "https://rewrite.revnovel.org",
-  "model": "rewrite-v9-c600-nvfp4",
-  "temperature": 0.15,
+  "model": "rewrite-v12-fp8",
+  "temperature": 0.6,
   "maxChars": 1000,
   "concurrency": 2
 }

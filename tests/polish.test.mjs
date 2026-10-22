@@ -7,6 +7,7 @@ import {
   bigramRecall,
   buildChunks,
   ensureOpening,
+  prefillAnchor,
   prepareRawText,
   reflowParagraphs,
   splitUnits,
@@ -172,9 +173,13 @@ test('校验：忠实改写通过，跑题、截断、新 HTML、复读不通过
   const faithful = splitUnits(NARRATION).join('\n').replace(/忽然/g, '突然')
   assert.equal(validateRewrite(NARRATION, faithful).ok, true)
   assert.equal(validateRewrite(NARRATION, '“我回来了。”“欢迎回家。”林岚愣了愣，她确实回家了。').ok, false)
+  assert.equal(validateRewrite(NARRATION, NARRATION).ok, false)
+  assert.equal(validateRewrite(NARRATION, NARRATION).reason, 'no-change')
   assert.equal(validateRewrite(NARRATION, NARRATION, { truncated: true }).ok, false)
   assert.equal(validateRewrite(NARRATION, NARRATION, { finishReason: 'length' }).ok, false)
   assert.equal(validateRewrite(NARRATION, NARRATION.replace('她把手里的伞收起来', '<div>伞</div>她把手里的伞收起来')).ok, false)
+  const titled = NARRATION.replace('雨是在黄昏时分落下来的。', '雨是在黄昏时分落下来的。第295章 他来了（三更）')
+  assert.equal(validateRewrite(NARRATION, titled).reason, 'new-heading')
   const repeated = NARRATION + '\n\n' + '她忽然想起哥哥临走前那个晚上，也是这样大的雨。' .repeat(8)
   assert.equal(validateRewrite(NARRATION, repeated).ok, false)
 })
@@ -208,6 +213,21 @@ test('整轮润色：不足 400 字跳过', async () => {
   assert.equal(result.reason, 'too-short')
 })
 
+test('整轮润色：服务端不接受预填时退回无预填请求', async () => {
+  let calls = 0
+  const client = {
+    async complete({ text, prefill }) {
+      calls += 1
+      if (prefill) throw Object.assign(new Error('assistant prefill not supported'), { code: 'bad_request', status: 400 })
+      return { text: text.replace(/忽然/g, '突然'), finishReason: 'stop', truncated: false }
+    }
+  }
+  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  assert.equal(result.status, 'ready')
+  assert.ok(calls >= 2)
+  assert.ok(result.text.includes('突然'))
+})
+
 test('整轮润色：模型跑题时放弃，保留原文', async () => {
   const client = fakeClient(() => '“我回来了。”\n“欢迎回家。”\n林岚愣了愣，她确实回家了。她放下背包，转身看向对方。')
   const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
@@ -219,6 +239,12 @@ test('整轮润色：模型弄丢占位符时跳过该段', async () => {
   const raw = NARRATION.replace('她把手里的伞收起来', 'image###一个女孩站在雨中的旧书店门口###她把手里的伞收起来')
   const client = fakeClient(text => text.replace(/【RW\d+】/g, '').replace(/忽然/g, '突然'))
   const result = await prepareRawText(raw, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  assert.notEqual(result.status, 'ready')
+})
+
+test('整轮润色：模型自造占位符时放弃', async () => {
+  const client = fakeClient(text => text.replace('她把手里的伞收起来', '【RW99】她把手里的伞收起来').replace(/忽然/g, '突然'))
+  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
   assert.notEqual(result.status, 'ready')
 })
 
@@ -256,4 +282,25 @@ test('mock 模式：改写台回显原文时整轮放弃，不返回可替换的
   assert.equal(result.reason, 'upstream-mock')
   assert.equal(result.text, undefined)
   assert.equal(calls.length, 1, '命中 mock 后不再继续请求后面的分段')
+})
+
+test('预填：第一句做锚点，整段做锚点时取第一段', () => {
+  assert.equal(prefillAnchor('第一句。第二句。'), '第一句。\n')
+  assert.equal(prefillAnchor('第一句。第二句。', 'paragraph'), '')
+  assert.equal(prefillAnchor('第一段第一句。第一段第二句。\n\n第二段。', 'paragraph'), '第一段第一句。第一段第二句。\n\n')
+  assert.equal(prefillAnchor('只有一句'), '')
+})
+
+test('设置：旧 v9 模型和低温自动迁移到 v12', () => {
+  const migrated = normalizeSettings({ model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 })
+  assert.equal(migrated.model, 'rewrite-v12-fp8')
+  assert.equal(migrated.temperature, 0.6)
+
+  const customTemperature = normalizeSettings({ model: 'rewrite-v9', temperature: 0.8 })
+  assert.equal(customTemperature.model, 'rewrite-v12-fp8')
+  assert.equal(customTemperature.temperature, 0.8)
+
+  const customModel = normalizeSettings({ model: 'my-rewrite', temperature: 0.1 })
+  assert.equal(customModel.model, 'my-rewrite')
+  assert.equal(customModel.temperature, 0.1)
 })
