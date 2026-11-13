@@ -6,6 +6,8 @@ GitHub：<https://github.com/bigmalove/dsh-tavern-rewrite>
 
 这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。内部包名和安装目录仍用 `dsh-tavern-rewrite`，界面显示为「revnovel润色」。
 
+> 0.3.1：修正文标记保护——`image###…###` 与 Markdown 图片行内保护放宽长度与边界，不再被截断；RunningHub `[[RH:SHOT]]…[[/RH]]` 标记块与 MVU 变量块一样整块跳过，不再被改写或拆坏；写入 `editTurn` 时带 `polish: true`，场景插图不会被正文替换冲掉。
+>
 > 0.3.0：适配 `revnovel.org` 新版裸改写端点（`https://revnovel.org/rw/v1`，模型 `rewrite3-27B`，仅调用润色模型、无需托管云端 key；支持 `/health` 健康检查与 `model_offline` 错误识别）。旧配置里的 `rewrite.revnovel.org` 与旧模型会自动迁移。
 
 ## 它怎么工作
