@@ -61,7 +61,7 @@ function reasonText(reason) {
     'empty': '改写 API 没有返回文字',
     'input_too_long': '正文超过改写台的 20000 字上限',
     'model_not_found': '服务端模型已更新或格式不对，请点「测试连接」获取最新模型名',
-    'missing_cloud_key': '该账号未托管云端模型 key，请先到 revnovel.org/keys 配置',
+    'model_offline': '改写模型当前不在线，请稍后再试',
     'disabled': '这一局关了自动润色',
     'cancelled': '润色已取消',
     'aborted': '润色已取消',

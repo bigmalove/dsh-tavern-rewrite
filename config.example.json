@@ -1,7 +1,7 @@
 {
   "auto": true,
-  "baseURL": "https://revnovel.org",
-  "model": "deepseek-flash/rewrite3-27B",
+  "baseURL": "https://revnovel.org/rw",
+  "model": "rewrite3-27B",
   "temperature": 0.6,
   "maxChars": 1000,
   "concurrency": 2

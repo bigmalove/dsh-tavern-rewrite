@@ -6,14 +6,14 @@ GitHub：<https://github.com/bigmalove/dsh-tavern-rewrite>
 
 这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。内部包名和安装目录仍用 `dsh-tavern-rewrite`，界面显示为「revnovel润色」。
 
-> 0.3.0：适配 `revnovel.org` 新版改文站（ST 托管 API `https://revnovel.org/v1`、`cloud/rewrite` 模型如 `deepseek-flash/rewrite3-27B`、`/health` 健康检查、400 `invalid_model`/`missing_cloud_key` 处理）。旧配置里的 `rewrite.revnovel.org` 与 `rewrite-v12-fp8` / `v9` 会自动迁移。
+> 0.3.0：适配 `revnovel.org` 新版裸改写端点（`https://revnovel.org/rw/v1`，模型 `rewrite3-27B`，仅调用润色模型、无需托管云端 key；支持 `/health` 健康检查与 `model_offline` 错误识别）。旧配置里的 `rewrite.revnovel.org` 与旧模型会自动迁移。
 
 ## 它怎么工作
 
 1. 后台结算开始时，插件的结算任务（`parallel` 阶段）先并行润色这一轮；正文写完、结算结束后再调用 `editTurn` 替换，因此通常不会在结算结束后额外等很久。
 2. 润色只改**文字段落**：HTML 状态栏、`details`、表格、```html 围栏、脚本整块原样保留；插件标记（`image###…###`）、URL、行内代码、宏、叙事标签会先换成占位符，回来再还原；MVU 的 `<UpdateVariable>` / `<InitVar>` 变量块整块跳过。提交前会做一次结构自检，HTML 有任何变化就放弃这次润色，保留原文。
 3. 改写台要求输入至少 400 字、最多 20000 字。插件按 1000 字左右切段（可在面板里调），每段单独调用；不足 400 字的段落跳过，正文整体太短时这一轮就不润色。
-4. 自部署裸改写模型（如 `rewrite-v12-fp8`）有时会顺着正文往下写，插件会把原文第一句作为 `assistant` 预填；`cloud/rewrite` 托管模型（如 `deepseek-flash/rewrite3-27B`）直接送入整段正文不发预填。输出统一做校验：长度比例、和原文的二字组重合度、复读、是否被截断、占位符是否丢失/新增、结尾标点。不合格会重试，最多 3 次；仍不合格就跳过这一段。跳过的段落保留原文，其余段落照常替换。
+4. `rewrite3-27B` 直接接收整段 `user` 正文即可改写（发 `assistant` 预填反而会触发续写）；自部署旧版 `v12` 模型仍保留 `assistant` 预填兜底。输出统一做校验：长度比例、和原文的二字组重合度、复读、是否被截断、占位符是否丢失/新增、结尾标点。不合格会重试，最多 3 次；仍不合格就跳过这一段。跳过的段落保留原文，其余段落照常替换。
 5. `editTurn` 会再触发一次 `onTurnSettled`。插件用 `textVersion`、润色文本哈希和 `onTimelineChanged` 的 `edit/regenerate` 事件做防循环，不会反复润色。玩家手动编辑过的正文也不会被自动覆盖。
 6. 面板里有「自动润色」总开关；每局也可以在「本局设置 → revnovel润色」里单独关闭。输入框上方的「revnovel润色」按钮可以手动重跑当前这一轮。
 7. 改写台后端模型没接上时会返回 `【mock 模式：模型未接入，以下为原文回显】` 加原文。插件把它当成上游不可用：**不替换正文**，在面板里记一条「改写台处于 mock 模式」，并在这之后 2 分钟内直接跳过自动润色（手动按钮仍会重试）。面板的「测试连接」也能提前发现这种状态。
@@ -48,14 +48,14 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 
 脚本只更新代码和说明，**不会覆盖目标目录已有的 `config.json`**。
 
-装好后刷新 Tavern 页面，先到 [revnovel.org/keys](https://revnovel.org/keys) 用 Discord 登录后托管云端模型 key 并创建 `sk-rw-…` 密钥，再打开侧栏「revnovel润色」，把 API 密钥粘贴到「API 密钥」里点「保存密钥」。密钥保存在 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY` 中。
+装好后刷新 Tavern 页面，先到 [revnovel.org/keys](https://revnovel.org/keys) 用 Discord 登录后创建 `sk-rw-…` 密钥（本插件仅调用裸改写模型，无需托管云端 key），再打开侧栏「revnovel润色」，把 API 密钥粘贴到「API 密钥」里点「保存密钥」。密钥保存在 DSH 凭据 `DSH_TAVERN_REWRITE_API_KEY` 中。
 
 `config.json` 是可选的非密钥配置（参考 `config.example.json`），只放服务地址、模型、温度这些：
 
 ```json
 {
-  "baseURL": "https://revnovel.org",
-  "model": "deepseek-flash/rewrite3-27B",
+  "baseURL": "https://revnovel.org/rw",
+  "model": "rewrite3-27B",
   "temperature": 0.6,
   "maxChars": 1000,
   "concurrency": 2
@@ -71,8 +71,8 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `auto` | `true` | 自动润色总开关；面板里也有勾选框 |
-| `baseURL` | `https://revnovel.org` | 服务地址，不带 `/v1`；直接贴 `/keys` 页面地址也可以；旧的 `rewrite.revnovel.org` 会自动迁移 |
-| `model` | `deepseek-flash/rewrite3-27B` | 默认模型；当前可选 `deepseek-flash/rewrite3-27B`、`deepseek-v4-pro/rewrite3-27B`；旧配置里的 v9/v12 会自动迁移，服务端换模型时也会用 `/v1/models` 自动切换 |
+| `baseURL` | `https://revnovel.org/rw` | 裸改写服务地址，不带 `/v1`；直接贴 `revnovel.org/keys` 或根域名也会自动归一到 `/rw`；旧的 `rewrite.revnovel.org` 会自动迁移 |
+| `model` | `rewrite3-27B` | 默认润色模型；旧配置里的 v9/v12 或带 `/` 的云端组合模型名会自动迁移，服务端换模型时也会用 `/v1/models` 自动切换 |
 | `temperature` | `0.6` | 建议 0.5–0.8；太低会原样回显，太高容易加戏或复读 |
 | `maxChars` | `1000` | 单次送进 API 的目标字数；400–2000。短尾巴会并入前一段，实际单段可能到 1.5 倍 |
 | `minChars` | `400` | 低于这个字数不送；改写台自己也会拒绝 |
@@ -84,10 +84,10 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 
 ## 改写台 API 备忘（2026-11 新版）
 
-- 密钥与控制台在 `https://revnovel.org/keys`（需要 Discord 登录，仅限「类脑」服务器成员）。使用 ST 托管 API 不仅需要创建 `sk-rw-…` 密钥，还需要在「密钥」页托管云端模型 key，否则调用会返回 400 `missing_cloud_key`。
-- OpenAI 兼容根地址是 `https://revnovel.org/v1`（旧的 `rewrite.revnovel.org` 已下线）。`GET /v1/models` 需要带鉴权头，当前返回 `deepseek-flash/rewrite3-27B` 和 `deepseek-v4-pro/rewrite3-27B`（`cloud/rewrite` 格式；旧模型名会触发 400 `invalid_model`）。
-- 调用方式：`POST /v1/chat/completions`，`Authorization: Bearer sk-rw-…`（也支持 `X-API-Key`）。用 `curl`/Node 时记得带 `User-Agent`，Cloudflare 会拦默认的无头/默认 UA。
-- 后端健康检查：`GET /health` 返回 `{"ok":true,"service":"revnovel-site","version":"0.1.0"}`（兼容旧版/自部署服务的 `/api/health`）。面板的「测试连接」会同时拉取 `/v1/models` 与健康状态。
+- 密钥页面在 `https://revnovel.org/keys`（需要 Discord 登录，仅限「类脑」服务器成员），创建 `sk-rw-…` 密钥即可使用，不需要托管云端模型 key。
+- 本插件对接的是裸改写模型端点 `https://revnovel.org/rw/v1`（旧的 `rewrite.revnovel.org` 已下线）。`GET /rw/v1/models` 需要带鉴权头，当前返回 `rewrite3-27B`。
+- 调用方式：`POST /rw/v1/chat/completions`，`Authorization: Bearer sk-rw-…`（也支持 `X-API-Key`）。用 `curl`/Node 时记得带 `User-Agent`，Cloudflare 会拦默认 UA。
+- 后端健康检查：`GET https://revnovel.org/health` 返回 `{"ok":true,"service":"revnovel-site","version":"0.1.0"}`（兼容旧版/自部署服务的 `/api/health`）。面板的「测试连接」会同时拉取 `/v1/models` 与健康状态。
 - Tavern 的插件接口没有「首次显示前替换流式正文」的钩子，公开的替换路径只有结算后的 `editTurn`。所以生成和后台结算期间先看到原文，结算结束后切换成润色版；预润色只是把切换前的额外等待压到最小。
 
 ## 作者 / 反馈

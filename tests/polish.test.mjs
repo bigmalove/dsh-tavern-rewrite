@@ -231,7 +231,7 @@ test('整轮润色：自部署模型服务端不接受预填时退回无预填�
   assert.ok(result.text.includes('突然'))
 })
 
-test('整轮润色：cloud/rewrite 托管模型不发送 assistant 预填，遇 missing_cloud_key 立即终止', async () => {
+test('整轮润色：rewrite3-27B 不发送 assistant 预填，遇 model_offline 立即终止', async () => {
   const prefills = []
   const client = {
     async complete({ text, prefill }) {
@@ -247,18 +247,18 @@ test('整轮润色：cloud/rewrite 托管模型不发送 assistant 预填，遇 
   assert.deepEqual(prefills, [''])
 
   let fatalCalls = 0
-  const missingKeyClient = {
+  const offlineClient = {
     async complete() {
       fatalCalls += 1
-      throw Object.assign(new Error('该账号未托管云端模型 key'), { code: 'missing_cloud_key', status: 400 })
+      throw Object.assign(new Error('改写模型均不在线'), { code: 'model_offline', status: 503 })
     }
   }
   const fatalResult = await prepareRawText(NARRATION, {
-    client: missingKeyClient,
+    client: offlineClient,
     settings: normalizeSettings({ maxChars: 1000, minChars: 400 })
   })
   assert.equal(fatalResult.status, 'failed')
-  assert.equal(fatalResult.reason, 'missing_cloud_key')
+  assert.equal(fatalResult.reason, 'model_offline')
   assert.equal(fatalCalls, 1)
 })
 
@@ -327,17 +327,21 @@ test('预填：第一句做锚点，整段做锚点时取第一段', () => {
 
 test('设置：旧域名与旧模型自动迁移，自定义地址保留自定义模型', () => {
   const migratedHost = normalizeSettings({ baseURL: 'https://rewrite.revnovel.org', model: 'rewrite-v12-fp8', temperature: 0.6 })
-  assert.equal(migratedHost.baseURL, 'https://revnovel.org')
-  assert.equal(migratedHost.model, 'deepseek-flash/rewrite3-27B')
+  assert.equal(migratedHost.baseURL, 'https://revnovel.org/rw')
+  assert.equal(migratedHost.model, 'rewrite3-27B')
   assert.equal(migratedHost.temperature, 0.6)
 
+  const migratedCloud = normalizeSettings({ baseURL: 'https://revnovel.org', model: 'deepseek-flash/rewrite3-27B', temperature: 0.6 })
+  assert.equal(migratedCloud.baseURL, 'https://revnovel.org/rw')
+  assert.equal(migratedCloud.model, 'rewrite3-27B')
+
   const migratedV9 = normalizeSettings({ model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 })
-  assert.equal(migratedV9.baseURL, 'https://revnovel.org')
-  assert.equal(migratedV9.model, 'deepseek-flash/rewrite3-27B')
+  assert.equal(migratedV9.baseURL, 'https://revnovel.org/rw')
+  assert.equal(migratedV9.model, 'rewrite3-27B')
   assert.equal(migratedV9.temperature, 0.6)
 
   const customTemperature = normalizeSettings({ model: 'rewrite-v9', temperature: 0.8 })
-  assert.equal(customTemperature.model, 'deepseek-flash/rewrite3-27B')
+  assert.equal(customTemperature.model, 'rewrite3-27B')
   assert.equal(customTemperature.temperature, 0.8)
 
   const selfHostedV12 = normalizeSettings({ baseURL: 'http://127.0.0.1:8080', model: 'rewrite-v12-fp8', temperature: 0.6 })

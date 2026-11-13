@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
       input_too_short: '太短',
       input_too_long: '太长',
       model_not_found: '模型不存在',
-      missing_cloud_key: '未托管云端 key',
+      model_offline: '模型不在线',
       empty: '空结果',
       short: '太短',
       structure: '结构校验'
@@ -232,12 +232,12 @@ window.__ModuleLoader__.load({
           h('div', { style: { flex: '1 1 260px' } }, field('服务地址', h('input', {
             style: styles.input, value: form.baseURL,
             onChange: event => update('baseURL', event.target.value),
-            placeholder: 'https://revnovel.org'
+            placeholder: 'https://revnovel.org/rw'
           }))),
           h('div', { style: { flex: '1 1 220px' } }, field('模型', h('input', {
             style: styles.input, value: form.model,
             onChange: event => update('model', event.target.value),
-            placeholder: 'deepseek-flash/rewrite3-27B'
+            placeholder: 'rewrite3-27B'
           })))
         ),
         h('div', { style: styles.row },
@@ -271,7 +271,7 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy), onClick: () => saveKey(false) }, busy === 'key' ? '保存中…' : '保存密钥'),
             h('button', { type: 'button', style: styles.button, disabled: Boolean(busy) || !key.configured, onClick: () => saveKey(true) }, busy === 'clear' ? '清除中…' : '清除凭据里的密钥')
           ),
-          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里；使用托管 API 前需在 ', h('a', { href: KEYS_PAGE, target: '_blank', rel: 'noreferrer noopener', style: styles.link }, 'revnovel.org/keys'), ' 创建密钥并托管云端 key。')
+          h('span', { style: styles.hint }, '密钥保存在 DSH 凭据里；可在 ', h('a', { href: KEYS_PAGE, target: '_blank', rel: 'noreferrer noopener', style: styles.link }, 'revnovel.org/keys'), ' 创建 sk-rw-… 密钥。')
         ),
         h('div', { style: styles.sectionTitle }, '最近的润色'),
         recent.length
