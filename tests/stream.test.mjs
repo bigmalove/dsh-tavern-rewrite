@@ -126,3 +126,21 @@ test('插件：关闭流式润色后不注册改写器', async () => {
   await createPlugin({ fetchImpl: h.fetchImpl, readConfig: async () => ({ baseURL: 'https://example.test', model: 'rewrite3-27B' }) }).apply(h.ctx)
   assert.equal(h.rewriters.length, 0)
 })
+
+test('面板状态：报告流式润色是否被宿主支持并在生效', async () => {
+  const h = streamHarness()
+  await createPlugin({ fetchImpl: h.fetchImpl, readConfig: async () => ({ baseURL: 'https://example.test', model: 'rewrite3-27B' }) }).apply(h.ctx)
+  const state = await h.handlers.get('dsh-tavern-rewrite/state')()
+  assert.equal(state.stream.supported, true)
+  assert.equal(state.stream.active, true)
+  assert.equal(state.apiVersion, 8)
+})
+
+test('旧宿主没有 replyRewriter 时：面板如实报告不支持，也不注册', async () => {
+  const h = streamHarness()
+  delete h.tavern.replyRewriter
+  await createPlugin({ fetchImpl: h.fetchImpl, readConfig: async () => ({ baseURL: 'https://example.test', model: 'rewrite3-27B' }) }).apply(h.ctx)
+  const state = await h.handlers.get('dsh-tavern-rewrite/state')()
+  assert.equal(state.stream.supported, false)
+  assert.equal(state.stream.active, false)
+})

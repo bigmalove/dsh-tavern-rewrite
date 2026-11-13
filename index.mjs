@@ -577,7 +577,11 @@ export function createPlugin(options = {}) {
           settings: publicSettings(settings),
           key: { configured: Boolean(resolved.value), source: resolved.source },
           recent: recent.slice(0, 12),
-          apiVersion: tavern.apiVersion
+          apiVersion: tavern.apiVersion,
+          stream: {
+            supported: typeof tavern.replyRewriter === 'function',
+            active: Boolean(streamRewriterOff)
+          }
         }
       })
 

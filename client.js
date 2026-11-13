@@ -239,6 +239,11 @@ window.__ModuleLoader__.load({
             h('span', { style: { ...styles.dot, background: key.configured ? '#3fb950' : '#e5534b' } }),
             key.configured ? '密钥已配置（' + (SOURCE_LABEL[key.source] || key.source) + '）' : '密钥未配置'
           ),
+          state?.stream?.supported === false
+            ? h('span', { style: styles.badge }, h('span', { style: { ...styles.dot, background: '#d9a100' } }), '宿主版本不支持流式（需要 Tavern 插件接口 v8）')
+            : state?.stream?.active
+              ? h('span', { style: styles.badge }, h('span', { style: { ...styles.dot, background: '#3fb950' } }), '正文边写边润已启用')
+              : null,
           h('label', { style: styles.check, title: '总开关；每局还能在本局设置里单独关闭' },
             h('input', { type: 'checkbox', checked: form.auto !== false, disabled: Boolean(busy), onChange: event => setAuto(event.target.checked) }),
             '自动润色'

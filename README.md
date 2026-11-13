@@ -39,9 +39,10 @@ https://github.com/bigmalove/dsh-tavern-rewrite
 npm run install:tavern
 ```
 
-默认复制到：
+默认自动探测本机的 Tavern 数据目录（`~/.dsh-tavern`、`~/.dsh`、`~/.dsh-desktop` 下存在 `profile-data/tavern/data/plugins` 的都装一份）：
 
 ```text
+~/.dsh-tavern/profile-data/tavern/data/plugins/dsh-tavern-rewrite/
 ~/.dsh/profile-data/tavern/data/plugins/dsh-tavern-rewrite/
 ```
 
@@ -63,6 +64,8 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
   "model": "rewrite3-27B",
   "temperature": 0.6,
   "maxChars": 1000,
+  "stream": true,
+  "streamMinChars": 500,
   "concurrency": 2
 }
 ```
@@ -81,6 +84,8 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 | `temperature` | `0.6` | 建议 0.5–0.8；太低会原样回显，太高容易加戏或复读 |
 | `maxChars` | `1000` | 单次送进 API 的目标字数；400–2000。短尾巴会并入前一段，实际单段可能到 1.5 倍 |
 | `minChars` | `400` | 低于这个字数不送；改写台自己也会拒绝 |
+| `stream` | `true` | 正文边写边润；关掉则退回结算后整段替换 |
+| `streamMinChars` | `500` | 流式时一段攒到多少字才送去改写；400–2000，改写台最低收 400 |
 | `concurrency` | `2` | 同时发几段；1–4 |
 | `timeoutMs` | `90000` | 单次请求超时 |
 | `retries` | `2` | 429/5xx/网络错误的自动重试次数 |
