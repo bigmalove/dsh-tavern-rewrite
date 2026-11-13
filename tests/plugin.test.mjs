@@ -101,12 +101,12 @@ async function harness(options = {}) {
       return { gameId, turn: current.turn, textVersion: current.textVersion, settled: true, busy: false, generating: false, settling: false }
     },
     async versionSignal() { return new AbortController().signal },
-    async editTurn({ gameId, turn, textVersion, text }) {
+    async editTurn({ gameId, turn, textVersion, text, polish }) {
       if (gameId !== current.gameId || turn !== current.turn || textVersion !== current.textVersion) {
         throw Object.assign(new Error('版本过期'), { code: 'TAVERN_PLUGIN_STALE_VERSION' })
       }
-      edits.push({ text, sourceVersion: textVersion })
-      current = { ...current, textVersion: 'v' + (edits.length + 1), rawText: text, text: text.replace(/<[^>]+>/g, '') }
+      edits.push({ text, sourceVersion: textVersion, polish })
+      current = { ...current, textVersion: polish ? textVersion : 'v' + (edits.length + 1), rawText: text, text: text.replace(/<[^>]+>/g, '') }
       return structuredClone(current)
     },
     async attach({ item }) {
@@ -160,6 +160,7 @@ test('插件：后台结算并行预润色，结算后替换正文且不重复�
   await h.tasks[0].run({ ...turn, signal: new AbortController().signal })
   await h.settled[0](turn)
   assert.equal(h.edits.length, 1)
+  assert.equal(h.edits[0].polish, true)
   assert.ok(h.edits[0].text.includes('突然'))
   assert.ok(h.edits[0].text.includes('<div class="status"><span>生命：100</span></div>'))
   assert.deepEqual(collectProtected(h.current.rawText), collectProtected(turn.rawText))

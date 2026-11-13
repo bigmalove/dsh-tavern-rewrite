@@ -277,7 +277,8 @@ export function createPlugin(options = {}) {
           gameId: turn.gameId,
           turn: turn.turn,
           textVersion: turn.textVersion,
-          text: entry.text
+          text: entry.text,
+          polish: true
         })
         if (updated?.textVersion) {
           markSelfEdit(turn.gameId, updated.textVersion)
