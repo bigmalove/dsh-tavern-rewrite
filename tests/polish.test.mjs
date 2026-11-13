@@ -61,7 +61,8 @@ const STRUCTURE_SAMPLES = [
   '正常文字。\n\n```html\n<script>alert(1)</script>\n```\n\n结束。',
   'A\n<div class="x">y</div>\nB',
   '正文。\n\n<UpdateVariable>{"hp":100,"items":["剑"]}</UpdateVariable>\n\n后文。',
-  '正文。\n\n<InitVar>{"gold":1}</InitVar>\n\n后文。'
+  '正文。\n\n<InitVar>{"gold":1}</InitVar>\n\n后文。',
+  '正文。\n\n[[RH:SHOT]]\n@after\n正文。\n@prompt\n1girl, <Picture 1>\n[[/RH:SHOT]]\n\n后文。'
 ]
 
 test('设置：自动润色总开关默认开，显式 false 才关', () => {
@@ -123,6 +124,20 @@ test('MVU 变量块整块保留，不送进改写模型', () => {
   assert.ok(result.text.includes('改了。'))
   const unclosed = mapProseSegments('开头。\n\n<updatevariable>{"hp":1}', text => '改了')
   assert.ok(unclosed.text.includes('<updatevariable>{"hp":1}'))
+})
+
+test('RunningHub [[RH:SHOT]] 标记块整块保留，不送进改写模型', () => {
+  const shot = '[[RH:SHOT]]\n@after\n开头。\n@caption\n雨夜\n@prompt\n1girl, <Picture 1>\n[[/RH:SHOT]]'
+  const source = '开头。\n\n' + shot + '\n\n结尾。'
+  const seen = []
+  const result = mapProseSegments(source, text => { seen.push(text); return text.replace(/开头|结尾/g, '改了') })
+  assert.ok(result.text.includes(shot))
+  assert.equal(seen.some(item => item.includes('RH:SHOT') || item.includes('Picture 1')), false)
+  assert.ok(result.text.includes('改了。'))
+
+  const fullWidth = '开头。\n\n［［RH：SHOT］］\n@prompt\nprompt\n［［/RH］］'
+  const fwResult = mapProseSegments(fullWidth, text => text.replace(/开头/g, '改了'))
+  assert.ok(fwResult.text.includes('［［RH：SHOT］］\n@prompt\nprompt\n［［/RH］］'))
 })
 
 test('切句：引号和省略号留在同一句里', () => {
