@@ -213,7 +213,7 @@ test('整轮润色：不足 400 字跳过', async () => {
   assert.equal(result.reason, 'too-short')
 })
 
-test('整轮润色：服务端不接受预填时退回无预填请求', async () => {
+test('整轮润色：自部署模型服务端不接受预填时退回无预填请求', async () => {
   let calls = 0
   const client = {
     async complete({ text, prefill }) {
@@ -222,10 +222,44 @@ test('整轮润色：服务端不接受预填时退回无预填请求', async ()
       return { text: text.replace(/忽然/g, '突然'), finishReason: 'stop', truncated: false }
     }
   }
-  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  const result = await prepareRawText(NARRATION, {
+    client,
+    settings: normalizeSettings({ baseURL: 'https://example.test', model: 'rewrite-v12-fp8', maxChars: 1000, minChars: 400 })
+  })
   assert.equal(result.status, 'ready')
   assert.ok(calls >= 2)
   assert.ok(result.text.includes('突然'))
+})
+
+test('整轮润色：cloud/rewrite 托管模型不发送 assistant 预填，遇 missing_cloud_key 立即终止', async () => {
+  const prefills = []
+  const client = {
+    async complete({ text, prefill }) {
+      prefills.push(prefill)
+      return { text: text.replace(/忽然/g, '突然'), finishReason: 'stop', truncated: false }
+    }
+  }
+  const okResult = await prepareRawText(NARRATION, {
+    client,
+    settings: normalizeSettings({ maxChars: 1000, minChars: 400 })
+  })
+  assert.equal(okResult.status, 'ready')
+  assert.deepEqual(prefills, [''])
+
+  let fatalCalls = 0
+  const missingKeyClient = {
+    async complete() {
+      fatalCalls += 1
+      throw Object.assign(new Error('该账号未托管云端模型 key'), { code: 'missing_cloud_key', status: 400 })
+    }
+  }
+  const fatalResult = await prepareRawText(NARRATION, {
+    client: missingKeyClient,
+    settings: normalizeSettings({ maxChars: 1000, minChars: 400 })
+  })
+  assert.equal(fatalResult.status, 'failed')
+  assert.equal(fatalResult.reason, 'missing_cloud_key')
+  assert.equal(fatalCalls, 1)
 })
 
 test('整轮润色：模型跑题时放弃，保留原文', async () => {
@@ -291,14 +325,24 @@ test('预填：第一句做锚点，整段做锚点时取第一段', () => {
   assert.equal(prefillAnchor('只有一句'), '')
 })
 
-test('设置：旧 v9 模型和低温自动迁移到 v12', () => {
-  const migrated = normalizeSettings({ model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 })
-  assert.equal(migrated.model, 'rewrite-v12-fp8')
-  assert.equal(migrated.temperature, 0.6)
+test('设置：旧域名与旧模型自动迁移，自定义地址保留自定义模型', () => {
+  const migratedHost = normalizeSettings({ baseURL: 'https://rewrite.revnovel.org', model: 'rewrite-v12-fp8', temperature: 0.6 })
+  assert.equal(migratedHost.baseURL, 'https://revnovel.org')
+  assert.equal(migratedHost.model, 'deepseek-flash/rewrite3-27B')
+  assert.equal(migratedHost.temperature, 0.6)
+
+  const migratedV9 = normalizeSettings({ model: 'rewrite-v9-c600-nvfp4', temperature: 0.15 })
+  assert.equal(migratedV9.baseURL, 'https://revnovel.org')
+  assert.equal(migratedV9.model, 'deepseek-flash/rewrite3-27B')
+  assert.equal(migratedV9.temperature, 0.6)
 
   const customTemperature = normalizeSettings({ model: 'rewrite-v9', temperature: 0.8 })
-  assert.equal(customTemperature.model, 'rewrite-v12-fp8')
+  assert.equal(customTemperature.model, 'deepseek-flash/rewrite3-27B')
   assert.equal(customTemperature.temperature, 0.8)
+
+  const selfHostedV12 = normalizeSettings({ baseURL: 'http://127.0.0.1:8080', model: 'rewrite-v12-fp8', temperature: 0.6 })
+  assert.equal(selfHostedV12.baseURL, 'http://127.0.0.1:8080')
+  assert.equal(selfHostedV12.model, 'rewrite-v12-fp8')
 
   const customModel = normalizeSettings({ model: 'my-rewrite', temperature: 0.1 })
   assert.equal(customModel.model, 'my-rewrite')

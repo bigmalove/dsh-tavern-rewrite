@@ -30,12 +30,15 @@ function chatCompletion(text) {
   return { id: 'x', object: 'chat.completion', model: 'm', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], usage: {} }
 }
 
-function fakeFetch({ transform = polish, models = ['rewrite-v12-fp8'], calls = [], health = null } = {}) {
+function fakeFetch({ transform = polish, models = ['deepseek-flash/rewrite3-27B', 'deepseek-v4-pro/rewrite3-27B'], calls = [], health = null, healthPath = '/api/health' } = {}) {
   return async function fetchImpl(url, init = {}) {
     calls.push({ url: String(url), init })
     const path = new URL(String(url)).pathname
-    if (path.endsWith('/api/health')) {
+    if (path === healthPath) {
       return health ? jsonResponse(health) : new Response('not found', { status: 404 })
+    }
+    if (path.endsWith('/health') || path.endsWith('/api/health')) {
+      return new Response('not found', { status: 404 })
     }
     if (path.endsWith('/v1/models')) return jsonResponse({ object: 'list', data: models.map(id => ({ id })) })
     if (!path.endsWith('/v1/chat/completions')) return new Response('not found', { status: 404 })
@@ -75,7 +78,7 @@ async function harness(options = {}) {
   let gameSettings = options.gameSettings || { auto: true }
   const edits = []
   const calls = []
-  const fetchImpl = fakeFetch({ transform: options.transform || polish, calls, health: options.health || null })
+  const fetchImpl = fakeFetch({ transform: options.transform || polish, calls, health: options.health || null, healthPath: options.healthPath || '/api/health' })
 
   const credentials = {
     async resolve() { return credential ? { value: credential, source: 'stored' } : undefined },
@@ -135,7 +138,7 @@ async function harness(options = {}) {
 
   const plugin = createPlugin({
     fetchImpl,
-    readConfig: async () => options.config || { baseURL: 'https://example.test', model: 'rewrite-v12-fp8', temperature: 0.6 }
+    readConfig: async () => options.config || { baseURL: 'https://example.test', model: 'deepseek-flash/rewrite3-27B', temperature: 0.6 }
   })
   await plugin.apply(ctx)
 
@@ -257,7 +260,7 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(h.credential, 'sk-new')
 
   const tested = await h.handlers.get('dsh-tavern-rewrite/test')({})
-  assert.deepEqual(tested.models, ['rewrite-v12-fp8'])
+  assert.deepEqual(tested.models, ['deepseek-flash/rewrite3-27B', 'deepseek-v4-pro/rewrite3-27B'])
 
   const cleared = await h.handlers.get('dsh-tavern-rewrite/key')({ apiKey: '' })
   assert.equal(cleared.key.configured, false)
@@ -272,17 +275,22 @@ test('插件：密钥不从 config.json 读取，必须用面板/凭据配置', 
   assert.equal(state.key.source, '')
 })
 
-test('插件：测试连接能识别改写台的 mock 后端', async () => {
+test('插件：测试连接能识别新版 /health 与旧版 mock 后端', async () => {
   const mocked = await harness({ health: { ok: true, backend: 'mock', model: 'rewrite-v12-fp8' } })
   await assert.rejects(mocked.handlers.get('dsh-tavern-rewrite/test')({}), /mock/)
 
-  const healthy = await harness({ health: { ok: true, backend: 'vllm' } })
+  const healthy = await harness({ health: { ok: true, service: 'revnovel-site', version: '0.1.0' }, healthPath: '/health' })
   const tested = await healthy.handlers.get('dsh-tavern-rewrite/test')({})
-  assert.equal(tested.backend, 'vllm')
-  assert.deepEqual(tested.models, ['rewrite-v12-fp8'])
+  assert.equal(tested.backend, 'revnovel-site')
+  assert.deepEqual(tested.models, ['deepseek-flash/rewrite3-27B', 'deepseek-v4-pro/rewrite3-27B'])
 })
 
 test('API：地址归一化', () => {
+  assert.equal(normalizeBaseURL('https://revnovel.org/keys'), 'https://revnovel.org')
+  assert.equal(normalizeBaseURL('https://revnovel.org/login'), 'https://revnovel.org')
+  assert.equal(normalizeBaseURL('https://revnovel.org/health'), 'https://revnovel.org')
+  assert.equal(normalizeBaseURL('https://revnovel.org/v1/'), 'https://revnovel.org')
+  assert.equal(normalizeBaseURL('https://revnovel.org/api'), 'https://revnovel.org')
   assert.equal(normalizeBaseURL('https://rewrite.revnovel.org/api'), 'https://rewrite.revnovel.org')
   assert.equal(normalizeBaseURL('https://rewrite.revnovel.org/v1/'), 'https://rewrite.revnovel.org')
   assert.equal(normalizeBaseURL('https://rewrite.revnovel.org'), 'https://rewrite.revnovel.org')
@@ -308,13 +316,19 @@ test('API：请求头、返回解析与错误码', async () => {
   assert.equal(body.stream, false)
 
   const short = createRewriteClient({
-    baseURL: 'https://rewrite.revnovel.org', apiKey: 'sk-test', fetchImpl: async () =>
+    baseURL: 'https://revnovel.org', apiKey: 'sk-test', fetchImpl: async () =>
       jsonResponse({ error: { message: '输入太短了', code: 'input_too_short' } }, 400)
   })
   await assert.rejects(short.complete({ text: '太短' }), error => error.code === 'input_too_short')
 
+  const missingCloudKey = createRewriteClient({
+    baseURL: 'https://revnovel.org', apiKey: 'sk-test', fetchImpl: async () =>
+      jsonResponse({ error: { message: '该账号未托管云端模型 key，请先到网站「密钥」页配置。', code: 'missing_cloud_key' } }, 400)
+  })
+  await assert.rejects(missingCloudKey.complete({ text: '原文' }), error => error.code === 'missing_cloud_key' && error.status === 400)
+
   const unauthorized = createRewriteClient({
-    baseURL: 'https://rewrite.revnovel.org', apiKey: 'sk-test', fetchImpl: async () =>
+    baseURL: 'https://revnovel.org', apiKey: 'sk-test', fetchImpl: async () =>
       jsonResponse({ error: { message: 'bad key' } }, 401)
   })
   await assert.rejects(unauthorized.complete({ text: '原文' }), error => error.code === 'auth' && /401/.test(error.message))
@@ -365,26 +379,32 @@ test('API：新版请求体带 task/auto_split，正文放 user，预填放 assi
   assert.equal(body.messages.some(message => message.role === 'system'), false)
 })
 
-test('API：模型不存在时按 /v1/models 自动切换', async () => {
-  const calls = []
-  const fetchImpl = async (url, init) => {
-    const path = new URL(String(url)).pathname
-    calls.push(path)
-    if (path.endsWith('/v1/models')) {
-      return jsonResponse({ object: 'list', data: [{ id: 'rewrite-v12-fp8' }] })
+test('API：模型不存在或格式非法（400/404）时按 /v1/models 自动切换', async () => {
+  for (const errBody of [
+    { status: 404, code: 'model_not_found', message: '模型不存在：rewrite-v9-c600-nvfp4' },
+    { status: 400, code: 'invalid_model', message: '模型名格式非法，应为 cloud/rewrite（例如 deepseek-flash/rewrite3-27B）' },
+    { status: 400, code: 'model_not_found', message: '云端模型不存在或不在线：local' }
+  ]) {
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      const path = new URL(String(url)).pathname
+      calls.push(path)
+      if (path.endsWith('/v1/models')) {
+        return jsonResponse({ object: 'list', data: [{ id: 'deepseek-flash/rewrite3-27B' }] })
+      }
+      const body = JSON.parse(init.body)
+      if (body.model === 'rewrite-v12-fp8') {
+        return jsonResponse({ error: { message: errBody.message, code: errBody.code } }, errBody.status)
+      }
+      return jsonResponse(chatCompletion('新模型结果'))
     }
-    const body = JSON.parse(init.body)
-    if (body.model === 'rewrite-v9-c600-nvfp4') {
-      return jsonResponse({ error: { message: '模型不存在：rewrite-v9-c600-nvfp4', code: 'model_not_found' } }, 404)
-    }
-    return jsonResponse(chatCompletion('新模型结果'))
+    const client = createRewriteClient({ baseURL: 'https://revnovel.org', apiKey: 'sk-test', model: 'rewrite-v12-fp8', retries: 0, fetchImpl })
+    const result = await client.complete({ text: '原文' })
+    assert.equal(result.text, '新模型结果')
+    assert.equal(result.model, 'deepseek-flash/rewrite3-27B')
+    assert.equal(calls.filter(path => path.endsWith('/v1/chat/completions')).length, 2)
+    assert.equal(calls.filter(path => path.endsWith('/v1/models')).length, 1)
   }
-  const client = createRewriteClient({ baseURL: 'https://example.test', apiKey: 'sk-test', model: 'rewrite-v9-c600-nvfp4', retries: 0, fetchImpl })
-  const result = await client.complete({ text: '原文' })
-  assert.equal(result.text, '新模型结果')
-  assert.equal(result.model, 'rewrite-v12-fp8')
-  assert.equal(calls.filter(path => path.endsWith('/v1/chat/completions')).length, 2)
-  assert.equal(calls.filter(path => path.endsWith('/v1/models')).length, 1)
 })
 
 test('API：模型不存在且拿不到模型列表时保留 model_not_found', async () => {

@@ -60,7 +60,8 @@ function reasonText(reason) {
     'truncated': '改写结果被截断，已跳过',
     'empty': '改写 API 没有返回文字',
     'input_too_long': '正文超过改写台的 20000 字上限',
-    'model_not_found': '服务端模型已更新，请点「测试连接」或把模型改成 rewrite-v12-fp8',
+    'model_not_found': '服务端模型已更新或格式不对，请点「测试连接」获取最新模型名',
+    'missing_cloud_key': '该账号未托管云端模型 key，请先到 revnovel.org/keys 配置',
     'disabled': '这一局关了自动润色',
     'cancelled': '润色已取消',
     'aborted': '润色已取消',
@@ -511,7 +512,10 @@ export function createPlugin(options = {}) {
         if (health?.backend === 'mock') {
           throw new Error('改写台当前处于 mock 模式（模型未接入），现在润色只会回显原文，等恢复后再试')
         }
-        return { models, model: settings.model, baseURL: settings.baseURL, backend: health?.backend || '' }
+        if (health && health.ok === false) {
+          throw new Error('改写台健康检查未通过，请稍后再试')
+        }
+        return { models, model: settings.model, baseURL: settings.baseURL, backend: health?.backend || health?.service || '' }
       })
 
       tavern.handle(HANDLE.recent, async () => ({ recent: recent.slice(0, 20) }))
