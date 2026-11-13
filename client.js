@@ -92,6 +92,8 @@ window.__ModuleLoader__.load({
         setState(next)
         setForm({
           auto: next.settings.auto !== false,
+          stream: next.settings.stream !== false,
+          streamMinChars: String(next.settings.streamMinChars ?? 500),
           baseURL: next.settings.baseURL,
           model: next.settings.model,
           temperature: String(next.settings.temperature),
@@ -167,6 +169,23 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function setStream(checked) {
+        update('stream', checked)
+        setBusy('stream')
+        setError('')
+        setNotice('')
+        try {
+          const next = await ctx.tavernUi.callHost(PLUGIN + '/save', { settings: { stream: checked } })
+          setState(current => current ? { ...current, settings: next.settings } : current)
+          setNotice(checked ? '已开启正文边写边润' : '已关闭正文边写边润（改回结算后整段替换）')
+        } catch (reason) {
+          update('stream', !checked)
+          setError(String(reason?.message || reason))
+        } finally {
+          setBusy('')
+        }
+      }
+
       async function test() {
         setBusy('test')
         setError('')
@@ -213,7 +232,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: styles.panel },
         h('div', null,
           h('div', { style: styles.sectionTitle }, 'revnovel润色'),
-          h('div', { style: styles.hint }, '正文写完后自动调用 revnovel 改写一次，再替换成润色后的正文。HTML 状态栏、代码块、插件标记会原样保留；正文不足 400 字时自动跳过，单段超过 2000 字会先切段。')
+          h('div', { style: styles.hint }, '正文一边写一边润：每写满一段就先送去改写、再显示，玩家看到的始终是润色版；关掉这一项则回到结算后整段替换。HTML 状态栏、代码块、插件标记原样保留；不足 400 字的段落不润色。')
         ),
         h('div', { style: styles.row },
           h('span', { style: styles.badge },
@@ -223,6 +242,10 @@ window.__ModuleLoader__.load({
           h('label', { style: styles.check, title: '总开关；每局还能在本局设置里单独关闭' },
             h('input', { type: 'checkbox', checked: form.auto !== false, disabled: Boolean(busy), onChange: event => setAuto(event.target.checked) }),
             '自动润色'
+          ),
+          h('label', { style: styles.check, title: '正文边写边润：先显示润色版，首段会比原来晚几秒出现' },
+            h('input', { type: 'checkbox', checked: form.stream !== false, disabled: Boolean(busy), onChange: event => setStream(event.target.checked) }),
+            '正文边写边润'
           )
         ),
         error ? h('div', { style: styles.error }, error) : null,
@@ -252,6 +275,10 @@ window.__ModuleLoader__.load({
           h('div', { style: { flex: '1 1 110px' } }, field('并发送稿数', h('input', {
             style: styles.input, type: 'number', min: 1, max: 4, step: 1, value: form.concurrency,
             onChange: event => update('concurrency', event.target.value)
+          }))),
+          h('div', { style: { flex: '1 1 130px' } }, field('流式起改字数', h('input', {
+            style: styles.input, type: 'number', min: 400, max: 2000, step: 50, value: form.streamMinChars,
+            onChange: event => update('streamMinChars', event.target.value)
           })))
         ),
         h('div', { style: styles.row },

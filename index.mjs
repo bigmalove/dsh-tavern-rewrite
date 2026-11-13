@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRewriteClient, isAbort, normalizeBaseURL, RewriteError } from './lib/api.mjs'
 import { prepareRawText } from './lib/polish.mjs'
+import { createStreamPlanner } from './lib/stream.mjs'
 import { DEFAULT_SETTINGS, normalizeSettings, publicSettings } from './lib/settings.mjs'
 
 export const name = 'dsh-tavern-rewrite'
@@ -10,7 +11,7 @@ export const inject = ['tavern', 'credentials']
 const KEY_REF = 'DSH_TAVERN_REWRITE_API_KEY'
 const STATUS_KIND = name + '/status'
 const CONFIG_URL = new URL('./config.json', import.meta.url)
-const FIELDS = ['auto', 'baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'concurrency', 'timeoutMs', 'retries']
+const FIELDS = ['auto', 'stream', 'streamMinChars', 'baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'concurrency', 'timeoutMs', 'retries']
 const HANDLE = {
   state: name + '/state',
   save: name + '/save',
@@ -56,6 +57,7 @@ function reasonText(reason) {
     'too-long': '改写结果比原文长太多，已跳过',
     'too-short-output': '改写结果比原文短太多，已跳过',
     'no-change': '模型把原文原样返回，没有改写',
+    'stream': '正文已经边写边润过了',
     'repetition': '改写结果出现复读，已跳过',
     'truncated': '改写结果被截断，已跳过',
     'empty': '改写 API 没有返回文字',
@@ -137,6 +139,101 @@ export function createPlugin(options = {}) {
     }
 
     await refreshSettings()
+
+    // 正文流式润色：模型写正文时把完整段落先交出去改写，改写完才显示。
+    const streamPlanner = createStreamPlanner({ minChars: () => settings.streamMinChars })
+    const streamedTurns = new Map()
+    const streamedGames = new Map()
+    const streamedAutoCache = new Map()
+    let streamRewriterOff = null
+
+    function streamKeyOf(gameId, turn) {
+      return String(gameId) + '\u0000' + String(turn)
+    }
+
+    function streamStatsOf(gameId, turn) {
+      const key = streamKeyOf(gameId, turn)
+      let entry = streamedTurns.get(key)
+      if (!entry) {
+        entry = { chunks: 0, polished: 0, skipped: 0, at: now() }
+        streamedTurns.set(key, entry)
+        while (streamedTurns.size > 200) streamedTurns.delete(streamedTurns.keys().next().value)
+      }
+      if (gameId) streamedGames.set(String(gameId), entry)
+      return entry
+    }
+
+    async function streamEnabledFor(gameId) {
+      if (settings.stream === false || settings.auto === false) return false
+      const hit = streamedAutoCache.get(String(gameId))
+      if (hit && now() - hit.at < 10_000) return hit.value
+      let value = true
+      try {
+        const values = await tavern.getGameSettings({ gameId })
+        value = values?.auto !== false
+      } catch { value = true }
+      streamedAutoCache.set(String(gameId), { value, at: now() })
+      while (streamedAutoCache.size > 50) streamedAutoCache.delete(streamedAutoCache.keys().next().value)
+      return value
+    }
+
+    function streamedFor(gameId, turn) {
+      const key = streamKeyOf(gameId, turn)
+      const entry = streamedTurns.get(key) || streamedGames.get(String(gameId))
+      if (!entry) return null
+      if (now() - entry.at > 10 * 60_000) return null
+      return entry
+    }
+
+    function clearStreamed(gameId, turn) {
+      streamedTurns.delete(streamKeyOf(gameId, turn))
+      streamedGames.delete(String(gameId))
+    }
+
+    async function rewriteStreamSegment(text, context = {}) {
+      const source = String(text ?? '')
+      if (!source.trim()) return source
+      const gameId = String(context.sessionId || '')
+      if (!(await streamEnabledFor(gameId))) return source
+      if (now() < mockUntil) return source
+      const stats = streamStatsOf(gameId, context.turn)
+      stats.at = now()
+      let client
+      try { client = await getClient() } catch (error) {
+        stats.skipped += 1
+        if (error?.code === 'no-key') record({ gameId, turn: context.turn || 0, mode: 'stream', status: 'skipped', reason: 'no-key' })
+        return source
+      }
+      stats.chunks += 1
+      try {
+        const result = await prepareRawText(source, { client, settings, signal: withLifecycle(context.signal) })
+        if (result?.status === 'ready' && result.text) { stats.polished += 1; return result.text }
+        stats.skipped += 1
+        return source
+      } catch (error) {
+        stats.skipped += 1
+        if (isAbort(error)) return source
+        if (error?.code === 'upstream-mock' || error?.code === 'model_offline') mockUntil = now() + 2 * 60_000
+        log('流式润色失败：' + shortReason(error?.message || error))
+        return source
+      }
+    }
+
+    function syncStreamRewriter() {
+      if (typeof tavern.replyRewriter !== 'function') return
+      const wanted = settings.stream !== false
+      if (wanted && !streamRewriterOff) {
+        streamRewriterOff = tavern.replyRewriter({
+          plan: (buffer, options) => streamPlanner(buffer, options),
+          rewrite: (text, context) => rewriteStreamSegment(text, context)
+        })
+      } else if (!wanted && streamRewriterOff) {
+        streamRewriterOff()
+        streamRewriterOff = null
+      }
+    }
+
+    syncStreamRewriter()
 
     async function resolveKey() {
       if (credentials?.resolve) {
@@ -341,6 +438,18 @@ export function createPlugin(options = {}) {
         if (!turn?.gameId || !Number.isInteger(turn.turn) || !turn.textVersion) return
         if (typeof turn.rawText !== 'string') return
         if (!(await autoEnabled(turn.gameId))) return
+        // 正文已经在流式阶段润过了：这一轮不再整段重写，避免二次改写把风格来回拧。
+        const streamed = streamedFor(turn.gameId, turn.turn)
+        if (streamed) {
+          clearStreamed(turn.gameId, turn.turn)
+          record({
+            gameId: turn.gameId, turn: turn.turn, mode: 'stream',
+            status: streamed.polished > 0 ? 'ready' : 'skipped',
+            reason: streamed.polished > 0 ? '' : 'stream',
+            stats: { chunks: streamed.chunks, polished: streamed.polished, skipped: streamed.skipped, reasons: [] }
+          })
+          return
+        }
         if (isSelfVersion(turn.gameId, turn.textVersion)) return
         if (isManualEdit(turn.gameId, turn.turn, turn.textVersion)) {
           record({ gameId: turn.gameId, turn: turn.turn, mode: 'auto', status: 'skipped', reason: 'manual-edit' })
@@ -433,6 +542,8 @@ export function createPlugin(options = {}) {
           try {
             const key = preparedKey(gameId, turn, textVersion)
             if (prepared.has(key) || inFlight.has('apply:' + key)) return
+            // 这一轮正文已经在流式阶段润过，结算时不再重复改写。
+            if (streamedFor(gameId, turn)) return
             if (!(await autoEnabled(gameId))) {
               const skipped = { status: 'skipped', reason: 'disabled' }
               storePrepared(key, skipped)
@@ -480,6 +591,8 @@ export function createPlugin(options = {}) {
         settings = next
         cachedClient = null
         cachedIdentity = ''
+        streamedAutoCache.clear()
+        syncStreamRewriter()
         const resolved = await resolveKey()
         return {
           settings: publicSettings(settings),
@@ -565,6 +678,9 @@ export function createPlugin(options = {}) {
         lifecycle.abort()
         prepared.clear()
         inFlight.clear()
+        streamedTurns.clear()
+        streamedGames.clear()
+        if (streamRewriterOff) { streamRewriterOff(); streamRewriterOff = null }
       })
     }
   }
