@@ -97,6 +97,12 @@ test('行内保护：标记、URL、代码、宏、叙事标签可还原', () =>
   const restored = restoreInline(text, items)
   assert.equal(restored.ok, true)
   assert.equal(restored.text, source)
+
+  const longTags = '1girl, ' + 'detailed, '.repeat(70) + '#fff'
+  const edge = `前文。\n\nimage###${longTags}###\n\nimage###no closing tag\n后文。`
+  const edgeProtected = protectInline(edge)
+  assert.equal(edgeProtected.items.length, 2)
+  assert.equal(restoreInline(edgeProtected.text, edgeProtected.items).text, edge)
 })
 
 test('行内保护：占位符丢失或重复时不还原', () => {
