@@ -117,7 +117,7 @@ DSH_TAVERN_PLUGIN_DIR=/path/to/plugins/dsh-tavern-rewrite npm run install:tavern
 - **需要宿主 v8**：旧版 Tavern（插件接口 7 及以下）没有 `replyRewriter`，插件会自动退回结算后整段替换。
 - **开场白不自动润色**：`onTurnSettled` 不为开场白发通知；如果开场白是最新一轮，可以手动点「revnovel润色」补一次。
 - **改写台处于 mock 模式**：这是服务端状态，插件无法绕过。此时这一轮保持原文，等改写台恢复后再手动点一次即可。
-- **服务端换模型**：默认模型已经迁到 `rewrite-v12-fp8`；如果以后 `/v1/models` 再换 id，插件会在 `404 model_not_found` 时自动取列表里的第一个模型重试，但面板里的「模型」字段不会自动改写，建议点一次「测试连接」确认。
+- **服务端换模型**：默认模型是 `rewrite3-27B`；如果以后 `/v1/models` 再换 id，插件会在 `404 model_not_found` 时自动取列表里的第一个模型重试，但面板里的「模型」字段不会自动改写，建议点一次「测试连接」确认。
 
 ## 测试
 
