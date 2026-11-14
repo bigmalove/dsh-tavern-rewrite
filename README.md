@@ -6,6 +6,8 @@ GitHub：<https://github.com/bigmalove/dsh-tavern-rewrite>
 
 这是独立维护的插件仓库（原在 `dsh-tavern/examples/` 下，已移出，不占用本体仓库的提交）。内部包名和安装目录仍用 `dsh-tavern-rewrite`，界面显示为「revnovel润色」。
 
+> 0.4.1：发包卫生补丁——`config.example.json` 补上 0.4.0 新增的 `stream` / `streamMinChars`（原先示例里没有，照抄会以为流式开关不存在）；新增 `tests/version.test.mjs` 把 `package.json` 版本、请求 `User-Agent` 版本、README 顶部版本说明绑在一起校验，`config.example.json` 的字段也必须存在于默认设置里，漏改一处测试就红；README 的发布流程改成可照抄的步骤，`npm test` 覆盖范围同步更新。
+>
 > 0.4.0：新增「正文边写边润」——宿主 v8 的 `tavern.replyRewriter()` 让插件在正文 token 流里按段落改写，首段从「写完整段 + 一次改写」后才出现，之后基本追着模型写；润色版直接落进存档，不再有结算后的整段跳变。工具提交模式（`submit_story`）、自动精修、玩家手动编辑仍走各自的正文路径。
 >
 > 0.3.1：修正文标记保护——`image###…###` 与 Markdown 图片行内保护放宽长度与边界，不再被截断；RunningHub `[[RH:SHOT]]…[[/RH]]` 标记块与 MVU 变量块一样整块跳过，不再被改写或拆坏；写入 `editTurn` 时带 `polish: true`，场景插图不会被正文替换冲掉。
@@ -128,11 +130,24 @@ npm test
 - `tests/polish.test.mjs`：切段、HTML/MVU 结构保护、占位符、段落重排、输出校验，不需要网络。
 - `tests/plugin.test.mjs`：用假的 fetch 跑宿主侧注册、预润色、`editTurn`、防循环、设置和密钥处理，以及新版请求体（`task`/`auto_split`/预填）、`model_not_found` 自动切换，不需要网络。
 - `tests/stream.test.mjs`：流式切点（不足阈值、段落边界、围栏与 RunningHub 标记块不切断）、改写走真实润色管线、流式过的轮次结算时不再整段重写。
+- `tests/version.test.mjs`：发版一致性——`package.json` 版本必须等于 `User-Agent` 里的版本、README 顶部要有对应版本说明、`config.example.json` 的字段必须存在于默认设置里。
 - 结构交叉检查默认读同级的 `dsh-tavern` 本体（`../dsh-tavern`）的 `editableReplyParts`；没有本体时退化为插件自己的 `collectProtected` 检查。可以用 `DSH_TAVERN_REPO=/path/to/dsh-tavern` 指定。
+
+单文件跑法：`npm run test:unit`、`npm run test:plugin`、`npm run test:stream`、`npm run test:versions`。
 
 ## 发布
 
-已发布在 <https://github.com/bigmalove/dsh-tavern-rewrite>。更新代码后推送到 `main` 即可；DSH Tavern 的「设置 → 插件」按默认分支安装/更新。发布前确认 `config.json` 没有被提交。
+已发布在 <https://github.com/bigmalove/dsh-tavern-rewrite>。DSH Tavern 的「设置 → 插件」按默认分支安装/更新，所以**日常提交推到 `main` 就等于更新**；打标签和建 Release 是为了留版本节点、方便回滚。
+
+发版步骤（在当前仓库根目录）：
+
+1. `npm test` —— 全绿再往下走；`tests/version.test.mjs` 会拦住版本号漏改。
+2. 改版本：`package.json` 的 `version`、`lib/api.mjs` 的 `USER_AGENT`、README 顶部补一段 `> <版本>：…` 说明。三处必须一致。
+3. `config.json` 不许入库（已在 `.gitignore` 里），提交前 `git status` 确认。
+4. 提交并打附注标签：`git commit -am "chore(release): <版本>"`、`git tag -a v<版本> -m "v<版本> — <一句话>"`。
+5. 推送：`git push origin main`、`git push origin v<版本>`。
+6. 建 Release：`gh release create v<版本> --title "v<版本> — <一句话>" --notes-file notes.md --latest`，说明里写清改了什么、库主要注意的配置变化。
+7. 本机自用同步：`npm run install:tavern`（自动探测 `~/.dsh-tavern` 与 `~/.dsh`，不会覆盖已有的 `config.json`）；宿主侧重启服务，浏览器侧刷新页面。
 
 ## 卸载
 

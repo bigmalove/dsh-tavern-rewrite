@@ -4,5 +4,8 @@
   "model": "rewrite3-27B",
   "temperature": 0.6,
   "maxChars": 1000,
+  "minChars": 400,
+  "stream": true,
+  "streamMinChars": 500,
   "concurrency": 2
 }

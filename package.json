@@ -1,6 +1,6 @@
 {
   "name": "dsh-tavern-rewrite",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "revnovel润色：DSH Tavern 正文润色插件，正文边写边润（流式改写），也可在结算后替换。",
@@ -12,6 +12,8 @@
     "test": "node --test tests/*.test.mjs",
     "test:unit": "node --test tests/polish.test.mjs",
     "test:plugin": "node --test tests/plugin.test.mjs",
+    "test:stream": "node --test tests/stream.test.mjs",
+    "test:versions": "node --test tests/version.test.mjs",
     "install:tavern": "node scripts/install.mjs"
   },
   "dsh": {
