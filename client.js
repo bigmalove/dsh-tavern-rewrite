@@ -98,6 +98,9 @@ window.__ModuleLoader__.load({
           model: next.settings.model,
           temperature: String(next.settings.temperature),
           maxChars: String(next.settings.maxChars),
+          recallMin: next.settings.recallMin == null ? '' : String(next.settings.recallMin),
+          precisionMin: next.settings.precisionMin == null ? '' : String(next.settings.precisionMin),
+          ratioMax: next.settings.ratioMax == null ? '' : String(next.settings.ratioMax),
           concurrency: String(next.settings.concurrency)
         })
       }
@@ -287,6 +290,21 @@ window.__ModuleLoader__.load({
           })))
         ),
         h('div', { style: styles.row },
+          h('div', { style: { flex: '1 1 130px' } }, field('偏离阈值 recall', h('input', {
+            style: styles.input, type: 'number', min: 0.05, max: 0.95, step: 0.05, value: form.recallMin,
+            placeholder: '自动 0.40', onChange: event => update('recallMin', event.target.value)
+          }))),
+          h('div', { style: { flex: '1 1 130px' } }, field('掺入阈值 precision', h('input', {
+            style: styles.input, type: 'number', min: 0.05, max: 0.95, step: 0.05, value: form.precisionMin,
+            placeholder: '自动 0.30', onChange: event => update('precisionMin', event.target.value)
+          }))),
+          h('div', { style: { flex: '1 1 130px' } }, field('长度上限 ratio', h('input', {
+            style: styles.input, type: 'number', min: 1.1, max: 3, step: 0.1, value: form.ratioMax,
+            placeholder: '自动 2.20', onChange: event => update('ratioMax', event.target.value)
+          })))
+        ),
+        h('div', { style: styles.hint }, '校验阈值留空就按模型自动：rewrite3-27B 用 0.40 / 0.30 / 2.20（实测 recall 0.40–0.70、ratio 0.97–1.91），只润色不改写的旧模型用 0.65 / 0.55 / 1.45。偏离与掺入是联合判定——只有两项同时不达标才整段丢弃。'),
+        h('div', { style: styles.row },
           h('button', { type: 'button', style: styles.buttonPrimary, disabled: Boolean(busy), onClick: save }, busy === 'save' ? '保存中…' : '保存设置'),
           h('button', { type: 'button', style: styles.button, disabled: Boolean(busy), onClick: test }, busy === 'test' ? '测试中…' : '测试连接'),
           h('button', { type: 'button', style: styles.button, disabled: Boolean(busy) || !gameId, onClick: polish }, busy === 'polish' ? '润色中…' : '润色当前这一轮'),
@@ -312,7 +330,7 @@ window.__ModuleLoader__.load({
             h('span', null,
               '第 ' + entry.turn + ' 轮 · ' + (entry.mode === 'manual' ? '手动' : '自动') + ' · ' +
               (STATUS_LABEL[entry.status] || entry.status) +
-              (entry.stats ? '（' + entry.stats.polished + '/' + entry.stats.chunks + ' 段' + (entry.stats.reasons && entry.stats.reasons.length ? '，' + entry.stats.reasons.map(value => REASON_LABEL[value] || value).join('、') : '') + '）' : '') +
+              (entry.stats ? '（' + entry.stats.polished + '/' + entry.stats.chunks + ' 段' + (entry.stats.relaxed ? '，放宽 ' + entry.stats.relaxed : '') + (entry.stats.reasons && entry.stats.reasons.length ? '，' + entry.stats.reasons.map(value => REASON_LABEL[value] || value).join('、') : '') + '）' : '') +
               (entry.reason ? ' · ' + entry.reason : '')
             ),
             h('span', { style: styles.hint }, entry.ms ? Math.round(entry.ms / 100) / 10 + 's' : '')

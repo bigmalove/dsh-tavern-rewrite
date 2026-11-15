@@ -11,7 +11,7 @@ export const inject = ['tavern', 'credentials']
 const KEY_REF = 'DSH_TAVERN_REWRITE_API_KEY'
 const STATUS_KIND = name + '/status'
 const CONFIG_URL = new URL('./config.json', import.meta.url)
-const FIELDS = ['auto', 'stream', 'streamMinChars', 'baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'concurrency', 'timeoutMs', 'retries']
+const FIELDS = ['auto', 'stream', 'streamMinChars', 'baseURL', 'model', 'temperature', 'maxChars', 'minChars', 'recallMin', 'precisionMin', 'ratioMax', 'concurrency', 'timeoutMs', 'retries']
 const HANDLE = {
   state: name + '/state',
   save: name + '/save',
@@ -155,7 +155,7 @@ export function createPlugin(options = {}) {
       const key = streamKeyOf(gameId, turn)
       let entry = streamedTurns.get(key)
       if (!entry) {
-        entry = { chunks: 0, polished: 0, skipped: 0, at: now() }
+        entry = { chunks: 0, polished: 0, relaxed: 0, skipped: 0, reasons: [], at: now() }
         streamedTurns.set(key, entry)
         while (streamedTurns.size > 200) streamedTurns.delete(streamedTurns.keys().next().value)
       }
@@ -207,8 +207,13 @@ export function createPlugin(options = {}) {
       stats.chunks += 1
       try {
         const result = await prepareRawText(source, { client, settings, signal: withLifecycle(context.signal) })
-        if (result?.status === 'ready' && result.text) { stats.polished += 1; return result.text }
+        if (result?.status === 'ready' && result.text) {
+          stats.polished += 1
+          stats.relaxed += result.stats?.relaxed || 0
+          return result.text
+        }
         stats.skipped += 1
+        if (result?.reason) stats.reasons.push(result.reason)
         return source
       } catch (error) {
         stats.skipped += 1
@@ -446,7 +451,7 @@ export function createPlugin(options = {}) {
             gameId: turn.gameId, turn: turn.turn, mode: 'stream',
             status: streamed.polished > 0 ? 'ready' : 'skipped',
             reason: streamed.polished > 0 ? '' : 'stream',
-            stats: { chunks: streamed.chunks, polished: streamed.polished, skipped: streamed.skipped, reasons: [] }
+            stats: { chunks: streamed.chunks, polished: streamed.polished, relaxed: streamed.relaxed || 0, skipped: streamed.skipped, reasons: [...new Set(streamed.reasons || [])].slice(0, 4) }
           })
           return
         }

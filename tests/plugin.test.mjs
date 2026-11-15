@@ -255,6 +255,15 @@ test('插件：设置、密钥和连接测试', async () => {
   assert.equal(saved.settings.maxChars, 700)
   assert.equal(h.data.plugin.apiKey, undefined, '密钥不写进插件数据')
 
+  // 校验阈值：面板传空字符串 = 按模型自动（null），传数字则原样存下去。
+  const gated = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { recallMin: '0.5', precisionMin: '', ratioMax: '1.7' } })
+  assert.equal(gated.settings.recallMin, 0.5)
+  assert.equal(gated.settings.precisionMin, null)
+  assert.equal(gated.settings.ratioMax, 1.7)
+  const regated = await h.handlers.get('dsh-tavern-rewrite/save')({ settings: { recallMin: '', precisionMin: null } })
+  assert.equal(regated.settings.recallMin, null)
+  assert.equal(regated.settings.precisionMin, null)
+
   const keySaved = await h.handlers.get('dsh-tavern-rewrite/key')({ apiKey: 'sk-new' })
   assert.equal(keySaved.key.configured, true)
   assert.equal(keySaved.key.source, 'credentials')

@@ -5,6 +5,9 @@
   "temperature": 0.6,
   "maxChars": 1000,
   "minChars": 400,
+  "recallMin": null,
+  "precisionMin": null,
+  "ratioMax": null,
   "stream": true,
   "streamMinChars": 500,
   "concurrency": 2

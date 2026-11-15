@@ -7,6 +7,8 @@ import {
   bigramRecall,
   buildChunks,
   ensureOpening,
+  relaxedAcceptable,
+  resolveGates,
   prefillAnchor,
   prepareRawText,
   reflowParagraphs,
@@ -173,21 +175,40 @@ test('开头检查：只补真正丢掉的开头，不补换一种说法的开�
 })
 
 test('切块：覆盖正文、不重叠、长段会继续切', () => {
-  const settings = normalizeSettings({ maxChars: 600, minChars: 400 })
+  const settings = normalizeSettings({ maxChars: 500, minChars: 400 })
   const chunks = buildChunks(NARRATION + '\n\n' + NARRATION, settings)
   assert.ok(chunks.length >= 2)
   let cursor = 0
   for (const chunk of chunks) {
     assert.ok(chunk.start >= cursor)
     assert.ok(chunk.end > chunk.start)
-    assert.ok(chunk.contentLength <= 900, 'chunk too large: ' + chunk.contentLength)
+    assert.ok(chunk.contentLength <= 1000, 'chunk too large: ' + chunk.contentLength)
+    assert.equal(chunk.skip, false, '有尾巴被静默跳过')
     cursor = chunk.end
   }
   assert.equal(cursor, (NARRATION + '\n\n' + NARRATION).length)
   const long = '甲'.repeat(1400)
   const longChunks = buildChunks(long, settings)
   assert.ok(longChunks.length >= 2)
-  assert.ok(longChunks.every(chunk => chunk.contentLength <= 900))
+  assert.ok(longChunks.every(chunk => chunk.contentLength <= 1000))
+  assert.ok(longChunks.every(chunk => chunk.skip === false))
+})
+
+test('切块：不足 minChars 的尾巴并进前一段，不留半段原文', () => {
+  // 用户现场：1500 字 / maxChars 500 / minChars 400，老实现切成 600 / 600 / 300(跳过)。
+  const paragraph = '雨落在旧书店的门口，街灯忽明忽暗。'.repeat(12)
+  const text = Array.from({ length: 6 }, () => paragraph).join('\n\n')
+  const chunks = buildChunks(text, { maxChars: 500, minChars: 400 })
+  assert.equal(chunks.some(chunk => chunk.skip), false, '不能有跳过的尾巴：' + chunks.map(chunk => chunk.contentLength))
+  assert.equal(chunks.at(-1).end, text.length)
+  // 尾巴被并进前一段，允许略超 maxChars，但不会无限膨胀。
+  assert.ok(chunks.at(-1).contentLength >= 400)
+  assert.ok(chunks.every(chunk => chunk.contentLength <= 1800))
+
+  // 整段都不足 minChars 时仍然只有一段，并且老实标成跳过（交给上层记「太短」）。
+  const tiny = buildChunks('雨停了。巷子很静。', { maxChars: 500, minChars: 400 })
+  assert.equal(tiny.length, 1)
+  assert.equal(tiny[0].skip, true)
 })
 
 test('校验：忠实改写通过，跑题、截断、新 HTML、复读不通过', () => {
@@ -372,4 +393,125 @@ test('设置：旧域名与旧模型自动迁移，自定义地址保留自定�
   const customModel = normalizeSettings({ model: 'my-rewrite', temperature: 0.1 })
   assert.equal(customModel.model, 'my-rewrite')
   assert.equal(customModel.temperature, 0.1)
+})
+
+
+// ── 校验阈值：rewrite3-27B 是降重改写模型，不能套「忠实润色」的阈值 ──
+// 现场样本：410 字段落里的前 100 字 + 模型第 1 次尝试的实际输出。
+// 旧实现 recall 门槛 0.65 / precision 0.55，这段正常输出被判 off-topic 整段丢弃。
+const REWRITE_SAMPLE_IN = '雨停的时候，巷子里只剩水洼里碎掉的天光。林昭把伞收起来，甩了两下，水珠溅在灰墙上，留下几道深色的痕。他站在那扇掉了漆的铁门前，抬手敲了三下，没人应。第四下还没落下，门轴先叫了一声，向里开了一条缝，缝里'
+const REWRITE_SAMPLE_OUT = '雨停的时候，巷子里只剩下碎掉的天空。林昭把伞收起，甩了甩，一串水珠甩出去，打在灰墙上，洇开几道深色痕迹。他站在那扇掉了漆的铁门前，抬手敲了三下，门后静悄悄的，只有檐角的残雨滴进水洼。第四下还没落下，门轴先行吱呀一声，向里开了一条缝，缝里露出半张脸和一只警惕的眼睛。'
+
+test('校验阈值：按模型族给默认值，设置可以逐项覆盖', () => {
+  assert.deepEqual(resolveGates({ model: 'rewrite3-27B' }), { recallMin: 0.4, precisionMin: 0.3, ratioMax: 2.2 })
+  assert.deepEqual(resolveGates({}), { recallMin: 0.4, precisionMin: 0.3, ratioMax: 2.2 })
+  assert.deepEqual(resolveGates({ model: 'rewrite-v12-fp8' }), { recallMin: 0.65, precisionMin: 0.55, ratioMax: 1.45 })
+  assert.deepEqual(resolveGates({ model: 'my-rewrite' }), { recallMin: 0.65, precisionMin: 0.55, ratioMax: 1.45 })
+  assert.deepEqual(
+    resolveGates({ model: 'rewrite3-27B', recallMin: 0.55, precisionMin: '', ratioMax: '1.6' }),
+    { recallMin: 0.55, precisionMin: 0.3, ratioMax: 1.6 }
+  )
+  // 面板传空字符串 = 用自动值；越界值夹紧。
+  assert.equal(normalizeSettings({ recallMin: '' }).recallMin, null)
+  assert.equal(normalizeSettings({ recallMin: '0.5' }).recallMin, 0.5)
+  assert.equal(normalizeSettings({ ratioMax: 9 }).ratioMax, 3)
+  assert.equal(normalizeSettings({ ratioMax: 0.2 }).ratioMax, 1.1)
+})
+
+test('校验：rewrite3-27B 的正常改写不再被判 off-topic', () => {
+  const result = validateRewrite(REWRITE_SAMPLE_IN, REWRITE_SAMPLE_OUT)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.ok(result.recall > 0.6 && result.recall < 0.8, 'recall = ' + result.recall)
+})
+
+test('校验：联合判定——单道偏低不否决，两道同时偏低才丢弃', () => {
+  const faithful = splitUnits(NARRATION).join('\n').replace(/忽然/g, '突然')
+  const base = validateRewrite(NARRATION, faithful)
+  assert.equal(base.ok, true)
+  // 只把 recall 门槛抬到实测值之上：单道偏低，放行。
+  const single = validateRewrite(NARRATION, faithful, { gates: { recallMin: 0.98, precisionMin: 0.01, ratioMax: 2.2 } })
+  assert.equal(single.ok, true, JSON.stringify(single))
+  // 两道都抬高：同时偏低，丢弃，原因取偏离更大的那一道。
+  const both = validateRewrite(NARRATION, faithful, { gates: { recallMin: 0.99, precisionMin: 0.99, ratioMax: 2.2 } })
+  assert.equal(both.ok, false)
+  assert.equal(both.reason, 'off-topic')
+  assert.equal(both.soft, true)
+})
+
+test('校验：长度上限按模型族分开，输出超过软上限 1.5 倍直接判失败', () => {
+  const long = NARRATION + '\n\n' + '雨声一直没有停，她把窗子关上，坐回椅子上。'.repeat(30)
+  const rewrite = validateRewrite(NARRATION, long, { gates: resolveGates({ model: 'rewrite3-27B' }) })
+  assert.equal(rewrite.ok, false)
+  assert.equal(rewrite.reason, 'too-long')
+  const faithful = validateRewrite(NARRATION, long, { gates: resolveGates({ model: 'rewrite-v12-fp8' }) })
+  assert.equal(faithful.reason, 'too-long')
+  assert.equal(faithful.soft, false, '超出硬上限的候选不保留')
+})
+
+test('校验：真跑题不给放宽候选', () => {
+  const offTopic = '今天天气很好，我们去了公园，坐在长椅上吃了两个三明治。'.repeat(20)
+  const result = validateRewrite(NARRATION, offTopic)
+  assert.equal(result.ok, false)
+  assert.equal(result.reason, 'off-topic')
+  assert.equal(relaxedAcceptable(result, { gates: resolveGates({}) }), false)
+})
+
+test('放宽候选：只救「差一点点」的那一版', () => {
+  const units = splitUnits(NARRATION)
+  // 每 4 句留 1 句原样、其余整句倒序：字都在，二组几乎全毁，是「改写偏大」的极端形态。
+  const mangled = units.map((unit, index) => (index % 4 === 1 ? unit : [...unit].reverse().join(''))).join('')
+  const validation = validateRewrite(NARRATION, mangled)
+  assert.equal(validation.ok, false)
+  assert.equal(validation.soft, true)
+  assert.equal(relaxedAcceptable(validation, { gates: resolveGates({}) }), true)
+  // 收紧阈值后同样这一版就不再算「差一点」。
+  assert.equal(relaxedAcceptable(validation, { gates: { ...resolveGates({}), recallMin: 0.6 } }), false)
+})
+
+test('重试：判偏离后升温换采样，而不是降温', async () => {
+  const temperatures = []
+  let call = 0
+  const client = {
+    async complete({ text, temperature }) {
+      temperatures.push(temperature)
+      call += 1
+      // 第一次：同长度的跑题输出（不撞 too-short，才会走软阈值分支）。
+      if (call === 1) return { text: '今天天气很好，我们去了公园，坐在长椅上吃了两个三明治。'.repeat(20), finishReason: 'stop', truncated: false }
+      return { text: text.replace(/忽然/g, '突然'), finishReason: 'stop', truncated: false }
+    }
+  }
+  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  assert.equal(result.status, 'ready')
+  assert.ok(temperatures.length >= 2)
+  assert.ok(temperatures[1] > temperatures[0], '温度应该升高：' + temperatures.join(' → '))
+  assert.equal(result.stats.relaxed, 0)
+})
+
+test('重试：三次都差一点时保留最优候选，而不是整段原文', async () => {
+  const units = splitUnits(NARRATION)
+  const mangled = units.map((unit, index) => (index % 4 === 1 ? unit : [...unit].reverse().join(''))).join('')
+  let calls = 0
+  const client = {
+    async complete() {
+      calls += 1
+      return { text: mangled, finishReason: 'stop', truncated: false }
+    }
+  }
+  const result = await prepareRawText(NARRATION, { client, settings: normalizeSettings({ maxChars: 1000, minChars: 400 }) })
+  assert.equal(calls, 3)
+  assert.equal(result.status, 'ready')
+  assert.ok(result.text && result.text !== NARRATION)
+  assert.equal(result.stats.polished, 1)
+  assert.equal(result.stats.relaxed, 1)
+})
+
+test('复读：原文自己就重复时按原文的重复率放宽，正常改写不再被误判', () => {
+  const sentence = '雨落在旧书店的门口，街灯忽明忽暗。'
+  const source = Array.from({ length: 14 }, () => sentence).join('\n\n')
+  const rewritten = source.replace(/雨/g, '细雨').replace(/忽明忽暗/g, '明明灭灭')
+  const result = validateRewrite(source, rewritten)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  // 原文不重复时，同样的复读仍然拦得住。
+  const loop = NARRATION + '\n\n' + '她忽然想起哥哥临走前那个晚上，也是这样大的雨。'.repeat(8)
+  assert.equal(validateRewrite(NARRATION, loop).reason, 'repetition')
 })

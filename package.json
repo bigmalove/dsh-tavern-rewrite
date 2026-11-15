@@ -1,6 +1,6 @@
 {
   "name": "dsh-tavern-rewrite",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "description": "revnovel润色：DSH Tavern 正文润色插件，正文边写边润（流式改写），也可在结算后替换。",
